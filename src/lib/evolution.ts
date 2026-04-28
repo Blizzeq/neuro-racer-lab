@@ -23,7 +23,21 @@ export function bestGenome(population: Genome[]): Genome | null {
     return null;
   }
 
-  return population.reduce((best, candidate) => (candidate.score > best.score ? candidate : best));
+  return population.reduce((best, candidate) => (compareGenomes(candidate, best) > 0 ? candidate : best));
+}
+
+export function compareGenomes(a: Genome, b: Genome): number {
+  const aLapTicks = finiteLapTicks(a);
+  const bLapTicks = finiteLapTicks(b);
+
+  if (aLapTicks !== null || bLapTicks !== null) {
+    if (aLapTicks !== null && bLapTicks !== null) {
+      return bLapTicks - aLapTicks;
+    }
+    return aLapTicks !== null ? 1 : -1;
+  }
+
+  return a.score - b.score;
 }
 
 export function evolvePopulation(
@@ -33,7 +47,7 @@ export function evolvePopulation(
   teacherGenome: Genome | null = null,
 ): EvolutionResult {
   const normalizedPopulation = normalizePopulation(population, config.populationSize, generation);
-  const ranked = [...normalizedPopulation].sort((a, b) => b.score - a.score);
+  const ranked = rankGenomes(normalizedPopulation);
   const eliteCount = Math.max(2, Math.round(config.populationSize * config.elitismRate));
   const teacherChildren = Math.max(2, Math.round(config.populationSize * config.teacherCloneRate));
   const randomImmigrants = Math.max(2, Math.round(config.populationSize * config.randomImmigrantRate));
@@ -119,6 +133,8 @@ export function evolvePopulationWithPackage(population: Genome[], config: Traini
     id: `g${generation + 1}-${index}-${Math.floor(Math.random() * 1_000_000).toString(36)}`,
     generation: generation + 1,
     score: 0,
+    completedLap: false,
+    bestLapTicks: null,
     weights: [...genome.weights],
   }));
 
@@ -127,6 +143,8 @@ export function evolvePopulationWithPackage(population: Genome[], config: Traini
     id: `g${generation + 1}-elite`,
     generation: generation + 1,
     score: 0,
+    completedLap: false,
+    bestLapTicks: null,
     weights: [...elite.weights],
   };
 
@@ -154,6 +172,8 @@ function resetForNextGeneration(genome: Genome, generation: number, suffix: stri
     id: `g${generation}-${suffix}`,
     generation,
     score: 0,
+    completedLap: false,
+    bestLapTicks: null,
   };
 }
 
@@ -161,5 +181,14 @@ function tournamentParent(population: Genome[]): Genome {
   const first = population[Math.floor(Math.random() * population.length)];
   const second = population[Math.floor(Math.random() * population.length)];
   const third = population[Math.floor(Math.random() * population.length)];
-  return [first, second, third].sort((a, b) => b.score - a.score)[0];
+  return rankGenomes([first, second, third])[0];
+}
+
+function rankGenomes(population: Genome[]): Genome[] {
+  return [...population].sort((a, b) => compareGenomes(b, a));
+}
+
+function finiteLapTicks(genome: Genome): number | null {
+  const lapTicks = genome.bestLapTicks;
+  return typeof lapTicks === 'number' && Number.isFinite(lapTicks) && lapTicks > 0 ? lapTicks : null;
 }

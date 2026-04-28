@@ -54,4 +54,29 @@ describe('fitness scoring', () => {
 
     expect(failed).toBeLessThan(clean);
   });
+
+  it('rewards faster completed laps more than slower completed laps', () => {
+    const slowLap = calculateFitness({
+      checkpoints: 12,
+      progressScore: 1200,
+      speedScore: 60,
+      age: 900,
+      crashed: false,
+      stagnant: false,
+      completedLap: true,
+      bestLapTicks: 900,
+    });
+    const fastLap = calculateFitness({
+      checkpoints: 12,
+      progressScore: 1200,
+      speedScore: 60,
+      age: 620,
+      crashed: false,
+      stagnant: false,
+      completedLap: true,
+      bestLapTicks: 620,
+    });
+
+    expect(fastLap).toBeGreaterThan(slowLap);
+  });
 });

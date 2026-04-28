@@ -25,7 +25,7 @@ import {
   trackWallSegments,
   wrapAngle,
 } from '../lib/geometry';
-import { bestGenome, createInitialPopulation, evolvePopulation } from '../lib/evolution';
+import { bestGenome, compareGenomes, createInitialPopulation, evolvePopulation } from '../lib/evolution';
 import { calculateFitness, cloneGenome, evaluateNetwork } from '../lib/neural';
 import { createExportSnapshot, hasSnapshot, loadSnapshot, parseExportSnapshot, saveSnapshot } from '../lib/storage';
 
@@ -46,7 +46,11 @@ type SimCar = {
   removed: boolean;
   crashed: boolean;
   stagnant: boolean;
+  completedLap: boolean;
   age: number;
+  completedLaps: number;
+  lapStartAge: number;
+  bestLapTicks: number | null;
   nextCheckpoint: number;
   checkpointCount: number;
   speedScore: number;
@@ -85,6 +89,7 @@ export class RacerScene extends Phaser.Scene {
   private population: Genome[] = [];
   private bestGenomeEver: Genome | null = null;
   private bestScoreEver = 0;
+  private bestLapTicksEver: number | null = null;
   private generation = 0;
   private generationStep = 0;
   private history: number[] = [];
@@ -196,6 +201,11 @@ export class RacerScene extends Phaser.Scene {
   loadPresetTrack(): void {
     this.setRunning(false);
     this.setTrack(createPresetTrack(), true);
+    this.bestGenomeEver = null;
+    this.bestScoreEver = 0;
+    this.bestLapTicksEver = null;
+    this.history = [];
+    this.generation = 0;
     this.resetTraining();
   }
 
@@ -208,6 +218,8 @@ export class RacerScene extends Phaser.Scene {
         id: `g${this.generation}-saved-elite`,
         generation: this.generation,
         score: 0,
+        completedLap: false,
+        bestLapTicks: null,
       };
     }
     this.generationStep = 0;
@@ -230,6 +242,7 @@ export class RacerScene extends Phaser.Scene {
     this.setRunning(false);
     this.bestGenomeEver = snapshot.bestGenome ? cloneGenome(snapshot.bestGenome) : null;
     this.bestScoreEver = this.bestGenomeEver?.score ?? 0;
+    this.bestLapTicksEver = this.bestGenomeEver?.bestLapTicks ?? null;
     this.generation = snapshot.generation;
     if (snapshot.version === 2) {
       this.applyConfig(snapshot.config);
@@ -252,6 +265,7 @@ export class RacerScene extends Phaser.Scene {
     this.setRunning(false);
     this.bestGenomeEver = snapshot.bestGenome ? cloneGenome(snapshot.bestGenome) : null;
     this.bestScoreEver = this.bestGenomeEver?.score ?? 0;
+    this.bestLapTicksEver = this.bestGenomeEver?.bestLapTicks ?? null;
     this.generation = snapshot.generation;
     this.config = { ...this.config, ...snapshot.config };
     this.setTrack(snapshot.track, true);
@@ -395,6 +409,7 @@ export class RacerScene extends Phaser.Scene {
         this.setTrack(nextTrack, true);
         this.bestGenomeEver = null;
         this.bestScoreEver = 0;
+        this.bestLapTicksEver = null;
         this.history = [];
         this.generation = 0;
         this.resetTraining();
@@ -444,15 +459,20 @@ export class RacerScene extends Phaser.Scene {
     const scoredPopulation = this.cars.map((car) => ({
       ...cloneGenome(car.genome),
       score: car.fitness,
+      completedLap: car.completedLap,
+      bestLapTicks: car.bestLapTicks,
     }));
     const generationBest = bestGenome(scoredPopulation);
-    const bestCar = this.cars.reduce<SimCar | null>((best, car) => (!best || car.fitness > best.fitness ? car : best), null);
+    const bestCar = this.selectBestCar();
     if (bestCar && bestCar.replay.length > 6) {
       this.ghostReplay = bestCar.replay.slice(-260);
     }
-    if (generationBest && generationBest.score >= this.bestScoreEver) {
-      this.bestScoreEver = generationBest.score;
+    if (generationBest) {
+      this.bestScoreEver = Math.max(this.bestScoreEver, generationBest.score);
+    }
+    if (generationBest && (!this.bestGenomeEver || compareGenomes(generationBest, this.bestGenomeEver) > 0)) {
       this.bestGenomeEver = cloneGenome(generationBest);
+      this.bestLapTicksEver = generationBest.bestLapTicks ?? this.bestLapTicksEver;
     }
 
     this.history = [...this.history.slice(-47), generationBest?.score ?? 0];
@@ -508,7 +528,11 @@ export class RacerScene extends Phaser.Scene {
       removed: false,
       crashed: false,
       stagnant: false,
+      completedLap: false,
       age: 0,
+      completedLaps: 0,
+      lapStartAge: 0,
+      bestLapTicks: null,
       nextCheckpoint: 1 % this.track.checkpoints.length,
       checkpointCount: 0,
       speedScore: 0,
@@ -531,8 +555,11 @@ export class RacerScene extends Phaser.Scene {
   private updateCar(car: SimCar): void {
     const body = car.body;
     const currentPosition = { x: body.position.x, y: body.position.y };
-    this.updateCheckpointProgress(car, currentPosition);
     this.updateContinuousProgress(car, currentPosition);
+    if (this.updateCheckpointProgress(car, currentPosition)) {
+      car.previousPosition = currentPosition;
+      return;
+    }
     const speed = Math.hypot(body.velocity.x, body.velocity.y);
     const inputs = this.readInputs(car, currentPosition, speed);
     const [steer, throttleSignal] = evaluateNetwork(car.genome.weights, inputs);
@@ -565,6 +592,8 @@ export class RacerScene extends Phaser.Scene {
       stagnant: car.stagnant,
       reversePenalty: car.reversePenalty,
       wallPenalty: car.wallPenalty,
+      completedLap: car.completedLap,
+      bestLapTicks: car.bestLapTicks,
     });
 
     const centerDistance = nearestDistanceToPolyline(currentPosition, this.track.centerline);
@@ -631,16 +660,23 @@ export class RacerScene extends Phaser.Scene {
     car.previousProgressDistance = absoluteProgress;
   }
 
-  private updateCheckpointProgress(car: SimCar, currentPosition: { x: number; y: number }): void {
+  private updateCheckpointProgress(car: SimCar, currentPosition: { x: number; y: number }): boolean {
     const checkpoint = this.track.checkpoints[car.nextCheckpoint];
-    if (!checkpoint) return;
+    if (!checkpoint) return false;
 
     if (segmentsIntersect(car.previousPosition, currentPosition, checkpoint.a, checkpoint.b)) {
+      const completesLap = checkpoint.index === 0 && car.checkpointCount >= this.track.checkpoints.length - 1;
       car.checkpointCount += 1;
       car.nextCheckpoint = (car.nextCheckpoint + 1) % this.track.checkpoints.length;
       car.lastCheckpointAge = car.age;
-      car.fitness += 120;
+      car.fitness += completesLap ? 420 : 120;
+      if (completesLap) {
+        this.completeLap(car, Math.max(1, car.age - car.lapStartAge), currentPosition);
+        return true;
+      }
     }
+
+    return false;
   }
 
   private readInputs(car: SimCar, position: { x: number; y: number }, speed: number): number[] {
@@ -678,6 +714,42 @@ export class RacerScene extends Phaser.Scene {
     });
   }
 
+  private completeLap(car: SimCar, lapTicks: number, currentPosition: { x: number; y: number }): void {
+    if (!car.alive) {
+      return;
+    }
+
+    car.completedLap = true;
+    car.completedLaps += 1;
+    car.bestLapTicks = car.bestLapTicks === null ? lapTicks : Math.min(car.bestLapTicks, lapTicks);
+    car.lapStartAge = car.age;
+    car.alive = false;
+    car.crashed = false;
+    car.stagnant = false;
+    car.fitness = calculateFitness({
+      checkpoints: car.checkpointCount,
+      speedScore: car.speedScore,
+      age: car.age,
+      crashed: false,
+      stagnant: false,
+      progressScore: car.progressScore,
+      reversePenalty: car.reversePenalty,
+      wallPenalty: car.wallPenalty,
+      completedLap: true,
+      bestLapTicks: car.bestLapTicks,
+    });
+    car.replay.push({
+      x: currentPosition.x,
+      y: currentPosition.y,
+      angle: car.body.angle,
+      tick: Math.round(car.age),
+      score: car.fitness,
+    });
+    this.matter.body.setVelocity(car.body, { x: 0, y: 0 });
+    this.matter.body.setAngularVelocity(car.body, 0);
+    this.removeCarBody(car);
+  }
+
   private killCar(car: SimCar, crashed: boolean, stagnant: boolean): void {
     if (!car.alive) {
       return;
@@ -694,6 +766,8 @@ export class RacerScene extends Phaser.Scene {
       progressScore: car.progressScore,
       reversePenalty: car.reversePenalty,
       wallPenalty: car.wallPenalty,
+      completedLap: car.completedLap,
+      bestLapTicks: car.bestLapTicks,
     });
     this.matter.body.setVelocity(car.body, { x: 0, y: 0 });
     this.matter.body.setAngularVelocity(car.body, 0);
@@ -831,7 +905,7 @@ export class RacerScene extends Phaser.Scene {
   private renderTrails(graphics: Phaser.GameObjects.Graphics): void {
     const leaders = [...this.cars]
       .filter((car) => car.trail.length > 2)
-      .sort((a, b) => b.fitness - a.fitness)
+      .sort((a, b) => this.compareCars(b, a))
       .slice(0, 5);
 
     for (const car of leaders) {
@@ -888,11 +962,29 @@ export class RacerScene extends Phaser.Scene {
   }
 
   private selectFocusCar(): SimCar | null {
+    return this.selectBestCar();
+  }
+
+  private selectBestCar(): SimCar | null {
     if (this.cars.length === 0) {
       return null;
     }
 
-    return this.cars.reduce((best, candidate) => (candidate.fitness > best.fitness ? candidate : best));
+    return this.cars.reduce((best, candidate) => (this.compareCars(candidate, best) > 0 ? candidate : best));
+  }
+
+  private compareCars(a: SimCar, b: SimCar): number {
+    const aLapTicks = finiteLapTicks(a.bestLapTicks);
+    const bLapTicks = finiteLapTicks(b.bestLapTicks);
+
+    if (aLapTicks !== null || bLapTicks !== null) {
+      if (aLapTicks !== null && bLapTicks !== null) {
+        return bLapTicks - aLapTicks;
+      }
+      return aLapTicks !== null ? 1 : -1;
+    }
+
+    return a.fitness - b.fitness;
   }
 
   private emitStats(status: TrainingStats['status']): void {
@@ -905,11 +997,19 @@ export class RacerScene extends Phaser.Scene {
     const maxCheckpoint = scored.reduce((best, car) => Math.max(best, car.checkpointCount), 0);
     const bestProgress = scored.reduce((best, car) => Math.max(best, car.bestProgress), 0);
     const crashed = scored.filter((car) => !car.alive && car.crashed).length;
+    const currentBestLapTicks = scored.reduce<number | null>(
+      (best, car) => minLapTicks(best, car.bestLapTicks),
+      null,
+    );
+    const lapCompletions = scored.filter((car) => car.completedLap).length;
 
     this.callbacks.onStats({
       generation: this.generation,
       bestScore: bestCurrent,
       bestEver: Math.max(this.bestScoreEver, bestCurrent),
+      currentBestLapTicks,
+      bestLapTicks: minLapTicks(this.bestLapTicksEver, currentBestLapTicks),
+      lapCompletions,
       averageScore: average,
       aliveCount: alive.length,
       populationSize: this.config.populationSize,
@@ -918,7 +1018,7 @@ export class RacerScene extends Phaser.Scene {
         : 0,
       maxCheckpoint,
       crashRate: scored.length > 0 ? crashed / scored.length : 0,
-      bestProgress: this.trackLength > 0 ? bestProgress / this.trackLength : 0,
+      bestProgress: this.trackLength > 0 ? Math.min(1, bestProgress / this.trackLength) : 0,
       eliteCount: this.lastEvolution.eliteCount,
       teacherChildren: this.lastEvolution.teacherChildren,
       history: this.history,
@@ -940,7 +1040,7 @@ export class RacerScene extends Phaser.Scene {
       return;
     }
     const focusCar = this.selectFocusCar();
-    if (!focusCar?.alive) {
+    if (!focusCar) {
       return;
     }
     this.cameras.main.centerOn(focusCar.body.position.x, focusCar.body.position.y);
@@ -956,4 +1056,21 @@ export class RacerScene extends Phaser.Scene {
       scrollY: camera.scrollY,
     };
   }
+}
+
+function finiteLapTicks(lapTicks: number | null | undefined): number | null {
+  return typeof lapTicks === 'number' && Number.isFinite(lapTicks) && lapTicks > 0 ? lapTicks : null;
+}
+
+function minLapTicks(a: number | null | undefined, b: number | null | undefined): number | null {
+  const first = finiteLapTicks(a);
+  const second = finiteLapTicks(b);
+
+  if (first === null) {
+    return second;
+  }
+  if (second === null) {
+    return first;
+  }
+  return Math.min(first, second);
 }

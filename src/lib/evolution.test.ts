@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_TRAINING_CONFIG } from '../types';
-import { createInitialPopulation, evolvePopulation } from './evolution';
+import { bestGenome, createInitialPopulation, evolvePopulation } from './evolution';
 
 describe('population evolution', () => {
   it('keeps population size and resets scores for the next generation', () => {
@@ -37,5 +37,14 @@ describe('population evolution', () => {
     expect(evolved.randomImmigrants).toBeGreaterThanOrEqual(2);
     expect(evolved.population.some((genome) => genome.id.includes('elite'))).toBe(true);
     expect(evolved.population.some((genome) => genome.id.includes('teacher'))).toBe(true);
+  });
+
+  it('ranks completed laps by shortest lap time before score', () => {
+    const population = createInitialPopulation(3, 0);
+    const unfinished = { ...population[0], id: 'unfinished', score: 99_000, completedLap: false, bestLapTicks: null };
+    const slowFinisher = { ...population[1], id: 'slow', score: 100, completedLap: true, bestLapTicks: 860 };
+    const fastFinisher = { ...population[2], id: 'fast', score: 80, completedLap: true, bestLapTicks: 620 };
+
+    expect(bestGenome([unfinished, slowFinisher, fastFinisher])?.id).toBe('fast');
   });
 });

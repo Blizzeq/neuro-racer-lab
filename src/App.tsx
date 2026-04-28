@@ -30,6 +30,9 @@ const INITIAL_STATS: TrainingStats = {
   generation: 0,
   bestScore: 0,
   bestEver: 0,
+  currentBestLapTicks: null,
+  bestLapTicks: null,
+  lapCompletions: 0,
   averageScore: 0,
   aliveCount: 0,
   populationSize: DEFAULT_TRAINING_CONFIG.populationSize,
@@ -281,8 +284,8 @@ export function App() {
 
           <section className="metrics-grid" aria-label="Training metrics">
             <Metric icon={<BrainCircuit size={18} />} label="Generation" value={stats.generation.toString()} />
-            <Metric icon={<Gauge size={18} />} label="Best" value={formatScore(stats.bestScore)} />
-            <Metric icon={<Zap size={18} />} label="Best ever" value={formatScore(stats.bestEver)} />
+            <Metric icon={<Gauge size={18} />} label="Fastest lap" value={formatLapTime(stats.bestLapTicks)} />
+            <Metric icon={<Zap size={18} />} label="This gen" value={formatLapTime(stats.currentBestLapTicks)} />
             <Metric icon={<Bot size={18} />} label="Alive" value={`${stats.aliveCount}/${stats.populationSize}`} />
             <Metric icon={<Crosshair size={18} />} label="Lap progress" value={`${Math.round(stats.bestProgress * 100)}%`} />
             <Metric icon={<RefreshCcw size={18} />} label="Crash rate" value={`${Math.round(stats.crashRate * 100)}%`} />
@@ -384,8 +387,9 @@ export function App() {
 
           <section className="panel-section algorithm-note">
             <strong>Genome</strong>
-            <span>8 sensor inputs · 7 hidden neurons · 2 driving outputs</span>
-            <span>Elite {stats.eliteCount} · Teacher children {stats.teacherChildren} · {config.trainingMode}</span>
+            <span>Best run = shortest completed lap; score fallback {formatScore(stats.bestScore)}</span>
+            <span>8 sensor inputs - 7 hidden neurons - 2 driving outputs</span>
+            <span>Elite {stats.eliteCount} - Teacher children {stats.teacherChildren} - Finishers {stats.lapCompletions}</span>
           </section>
         </aside>
       </section>
@@ -414,6 +418,13 @@ function Metric({ icon, label, value }: { icon: ReactNode; label: string; value:
 
 function formatScore(score: number): string {
   return Math.round(score).toLocaleString('en-US');
+}
+
+function formatLapTime(lapTicks: number | null): string {
+  if (lapTicks === null) {
+    return '--';
+  }
+  return `${(lapTicks / 60).toFixed(2)}s`;
 }
 
 function buildChartPoints(history: number[]): string {

@@ -9,7 +9,7 @@ Interactive browser demo where tiny neural drivers learn to race custom tracks t
 - A population of cars drives in parallel with ray sensors and a small neural controller.
 - The `geneticalgorithm` package evolves the neural weights between generations.
 - Zoom, pan, fit-to-track, and follow-best camera controls support longer custom routes.
-- Training stats, best score history, save/load, JSON export/import, speed, population, mutation, and training mode controls are available in the UI.
+- Training stats, fastest lap timing, save/load, JSON export/import, speed, population, mutation, and training mode controls are available in the UI.
 - Ghost replay and line heat make the strongest driving line visible between generations.
 
 ## How The Learning Works
@@ -19,7 +19,8 @@ Each car owns a JSON-compatible genome: a flat array of weights for a fixed neur
 - Inputs: 5 wall distance sensors, speed, heading error to the next checkpoint, centerline distance.
 - Network: 8 inputs, 7 hidden neurons, 2 outputs.
 - Outputs: steering and throttle strength.
-- Fitness: continuous centerline progress, checkpoint progress, speed, survival time, with penalties for crashes, reversing, wall scraping, and stagnation.
+- Fitness: continuous centerline progress, checkpoint progress, speed, survival time, fastest completed lap bonus, with penalties for crashes, reversing, wall scraping, and stagnation.
+- Selection: once any car completes a lap, the best run is the shortest lap time. Progress-based fitness is only the fallback until the first finish.
 - Evolution: top elites are retained, the best historical driver seeds teacher mutations, crossover samples from the strongest parents, and random immigrants keep exploration alive.
 - Modes: Explore, Balanced, and Exploit adjust mutation, elitism, teacher cloning, and random immigrants.
 

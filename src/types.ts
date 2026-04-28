@@ -37,6 +37,8 @@ export type Genome = {
   weights: number[];
   score: number;
   generation: number;
+  completedLap?: boolean;
+  bestLapTicks?: number | null;
 };
 
 export type TrainingMode = 'explore' | 'balanced' | 'exploit';
@@ -57,6 +59,9 @@ export type TrainingStats = {
   generation: number;
   bestScore: number;
   bestEver: number;
+  currentBestLapTicks: number | null;
+  bestLapTicks: number | null;
+  lapCompletions: number;
   averageScore: number;
   aliveCount: number;
   populationSize: number;

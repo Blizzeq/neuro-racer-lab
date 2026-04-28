@@ -10,6 +10,8 @@ export function createRandomGenome(generation = 0, random = Math.random): Genome
     id: createGenomeId(generation, random),
     generation,
     score: 0,
+    completedLap: false,
+    bestLapTicks: null,
     weights: Array.from({ length: GENOME_WEIGHT_COUNT }, () => randomWeight(random)),
   };
 }
@@ -51,6 +53,8 @@ export function mutateGenome(genome: Genome, mutationRate: number, mutationAmoun
     ...genome,
     id: createGenomeId(genome.generation + 1, random),
     score: 0,
+    completedLap: false,
+    bestLapTicks: null,
     generation: genome.generation + 1,
     weights: genome.weights.map((weight) => {
       if (random() > mutationRate) {
@@ -73,8 +77,24 @@ export function crossoverGenome(a: Genome, b: Genome, random = Math.random): [Ge
   ];
 
   return [
-    { ...a, id: createGenomeId(a.generation + 1, random), score: 0, generation: a.generation + 1, weights: childA },
-    { ...b, id: createGenomeId(b.generation + 1, random), score: 0, generation: b.generation + 1, weights: childB },
+    {
+      ...a,
+      id: createGenomeId(a.generation + 1, random),
+      score: 0,
+      completedLap: false,
+      bestLapTicks: null,
+      generation: a.generation + 1,
+      weights: childA,
+    },
+    {
+      ...b,
+      id: createGenomeId(b.generation + 1, random),
+      score: 0,
+      completedLap: false,
+      bestLapTicks: null,
+      generation: b.generation + 1,
+      weights: childB,
+    },
   ];
 }
 
@@ -94,17 +114,23 @@ export function calculateFitness(input: {
   stagnant: boolean;
   reversePenalty?: number;
   wallPenalty?: number;
+  completedLap?: boolean;
+  bestLapTicks?: number | null;
 }): number {
   const crashPenalty = input.crashed ? 80 : 0;
   const stagnantPenalty = input.stagnant ? 65 : 0;
   const reversePenalty = input.reversePenalty ?? 0;
   const wallPenalty = input.wallPenalty ?? 0;
+  const lapBonus = input.completedLap && input.bestLapTicks
+    ? 6000 + Math.max(0, 6000 - input.bestLapTicks * 2.5)
+    : 0;
   return Math.max(
     0,
     (input.progressScore ?? 0) * 1.15
       + input.checkpoints * 90
       + input.speedScore * 1.35
       + input.age * 0.018
+      + lapBonus
       - crashPenalty
       - stagnantPenalty
       - reversePenalty
