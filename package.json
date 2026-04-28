@@ -1,0 +1,31 @@
+{
+  "name": "neuro-racer-lab",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "jsdom": "^29.1.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.0.10",
+    "vitest": "^4.1.5"
+  },
+  "dependencies": {
+    "geneticalgorithm": "^1.0.2",
+    "lucide-react": "^1.12.0",
+    "phaser": "^3.90.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  }
+}

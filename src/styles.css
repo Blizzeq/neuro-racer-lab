@@ -1,0 +1,395 @@
+:root {
+  color: #e8eef7;
+  background: #080a0f;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: 18px;
+  background:
+    linear-gradient(120deg, rgba(56, 248, 212, 0.08), transparent 32%),
+    linear-gradient(300deg, rgba(255, 206, 69, 0.07), transparent 36%),
+    #080a0f;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 354px;
+  gap: 16px;
+  min-height: calc(100vh - 36px);
+}
+
+.stage-panel,
+.control-panel {
+  border: 1px solid rgba(143, 163, 187, 0.2);
+  background: rgba(10, 14, 20, 0.88);
+  box-shadow: 0 20px 80px rgba(0, 0, 0, 0.35);
+}
+
+.stage-panel {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(143, 163, 187, 0.18);
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: #38f8d4;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  color: #f8fbff;
+  font-size: 31px;
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+.run-cluster {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.racer-stage {
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  background: #090b10;
+}
+
+.racer-stage canvas {
+  max-width: 100%;
+  max-height: 100%;
+  outline: none;
+}
+
+.control-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-radius: 8px;
+  padding: 14px;
+  overflow-y: auto;
+}
+
+.panel-section,
+.metric-tile {
+  border: 1px solid rgba(143, 163, 187, 0.18);
+  border-radius: 8px;
+  background: rgba(16, 22, 31, 0.78);
+}
+
+.panel-section {
+  padding: 14px;
+}
+
+.status-section {
+  display: grid;
+  gap: 10px;
+}
+
+.status-line,
+.track-name,
+.section-heading,
+.metric-tile div,
+.control-row {
+  display: flex;
+  align-items: center;
+}
+
+.status-line {
+  gap: 9px;
+  color: #f8fbff;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #8fa3bb;
+  box-shadow: 0 0 18px rgba(143, 163, 187, 0.45);
+}
+
+.status-dot.running {
+  background: #38f8d4;
+  box-shadow: 0 0 18px rgba(56, 248, 212, 0.85);
+}
+
+.status-dot.drawing {
+  background: #ff5b7c;
+  box-shadow: 0 0 18px rgba(255, 91, 124, 0.8);
+}
+
+.status-dot.evolving {
+  background: #ffce45;
+  box-shadow: 0 0 18px rgba(255, 206, 69, 0.8);
+}
+
+.track-name {
+  gap: 8px;
+  color: #aebbc9;
+  font-size: 14px;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.metric-tile {
+  min-height: 86px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.metric-tile div {
+  justify-content: space-between;
+  gap: 8px;
+  color: #8fa3bb;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.metric-tile svg {
+  color: #38f8d4;
+}
+
+.metric-tile strong {
+  color: #f8fbff;
+  font-size: 25px;
+  line-height: 1;
+}
+
+.section-heading {
+  justify-content: space-between;
+  margin-bottom: 10px;
+  color: #e8eef7;
+  font-weight: 750;
+}
+
+.progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #202a36;
+  overflow: hidden;
+}
+
+.progress-track span {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #38f8d4, #ffce45);
+}
+
+.fitness-chart {
+  width: 100%;
+  height: 72px;
+  margin-top: 14px;
+  overflow: visible;
+}
+
+.fitness-chart polyline {
+  fill: none;
+  stroke: #ff5b7c;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.controls {
+  display: grid;
+  gap: 14px;
+}
+
+.control-row {
+  gap: 10px;
+  min-height: 34px;
+}
+
+.control-row label {
+  width: 82px;
+  color: #aebbc9;
+  font-size: 14px;
+}
+
+.control-row input[type="range"] {
+  min-width: 0;
+  flex: 1;
+  accent-color: #38f8d4;
+}
+
+.control-row output {
+  width: 42px;
+  text-align: right;
+  color: #f8fbff;
+  font-variant-numeric: tabular-nums;
+}
+
+.control-row select {
+  flex: 1;
+  height: 34px;
+  border: 1px solid rgba(143, 163, 187, 0.32);
+  border-radius: 6px;
+  color: #f8fbff;
+  background: #111821;
+  padding: 0 10px;
+}
+
+.command-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.icon-button {
+  min-height: 40px;
+  border: 1px solid rgba(143, 163, 187, 0.24);
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #e8eef7;
+  background: #111821;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.icon-button:hover:not(:disabled),
+.icon-button.active {
+  border-color: rgba(56, 248, 212, 0.7);
+  background: rgba(56, 248, 212, 0.12);
+}
+
+.icon-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.icon-button.primary {
+  min-width: 118px;
+  border-color: rgba(56, 248, 212, 0.65);
+  color: #06110f;
+  background: #38f8d4;
+  font-weight: 800;
+}
+
+.icon-button.primary:hover {
+  background: #70ffe7;
+}
+
+.algorithm-note {
+  display: grid;
+  gap: 6px;
+  color: #aebbc9;
+  font-size: 14px;
+}
+
+.algorithm-note strong {
+  color: #ffce45;
+}
+
+@media (max-width: 1120px) {
+  .app-shell {
+    padding: 12px;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .control-panel {
+    overflow: visible;
+  }
+}
+
+@media (max-width: 680px) {
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  h1 {
+    font-size: 25px;
+  }
+
+  .run-cluster {
+    width: 100%;
+  }
+
+  .run-cluster .primary {
+    flex: 1;
+  }
+
+  .metrics-grid,
+  .command-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .control-row {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .control-row label {
+    width: 100%;
+  }
+}
