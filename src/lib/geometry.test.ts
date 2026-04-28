@@ -37,6 +37,19 @@ describe('track generation', () => {
     expect(track.bounds.maxY).toBeGreaterThan(720);
   });
 
+  it('widens generated tracks enough for sharp turns', () => {
+    const track = generateTrack([
+      { x: 100, y: 100 },
+      { x: 620, y: 100 },
+      { x: 620, y: 220 },
+      { x: 120, y: 220 },
+    ], 70);
+
+    expect(track.width).toBeGreaterThanOrEqual(124);
+    expect(track.leftBoundary).toHaveLength(track.centerline.length);
+    expect(track.rightBoundary).toHaveLength(track.centerline.length);
+  });
+
   it('does not clamp drawn points to the simulator workspace', () => {
     const track = generateTrack([
       { x: -1300, y: -900 },

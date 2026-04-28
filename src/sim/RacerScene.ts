@@ -87,12 +87,12 @@ type SimCar = {
   color: number;
 };
 
-const SENSOR_ANGLES = [-0.95, -0.48, 0, 0.48, 0.95];
-const SENSOR_RANGE = 210;
-const MAX_SPEED = 9.2;
-const CAR_WIDTH = 27;
-const CAR_HEIGHT = 14;
-const WALL_THICKNESS = 12;
+const SENSOR_ANGLES = [-1.35, -0.72, 0, 0.72, 1.35];
+const SENSOR_RANGE = 260;
+const MAX_SPEED = 9.8;
+const CAR_WIDTH = 22;
+const CAR_HEIGHT = 12;
+const WALL_THICKNESS = 8;
 const CAR_COLORS = [0x38f8d4, 0xffce45, 0xff5b7c, 0x67a6ff, 0xd6ff5a, 0xf489ff];
 const CAR_TEXTURES = [
   'car-cyan',
@@ -860,7 +860,7 @@ export class RacerScene extends Phaser.Scene {
       CAR_HEIGHT,
       {
         label: 'car',
-        frictionAir: 0.055,
+        frictionAir: 0.048,
         friction: 0.02,
         restitution: 0.12,
         collisionFilter: {
@@ -935,13 +935,20 @@ export class RacerScene extends Phaser.Scene {
       y: body.velocity.y - lateral.y * lateralSpeed * 0.22,
     };
 
-    this.matter.body.setVelocity(body, correctedVelocity);
-    this.matter.body.setAngularVelocity(body, steer * 0.075);
+    const brake = clamp(-throttleSignal, 0, 1);
+    const brakeDrag = 1 - brake * 0.11;
+    this.matter.body.setVelocity(body, {
+      x: correctedVelocity.x * brakeDrag,
+      y: correctedVelocity.y * brakeDrag,
+    });
 
-    const throttle = 0.62 + throttleSignal * 0.38;
+    const lowSpeedSteerBoost = 1 - Math.min(1, speed / MAX_SPEED);
+    this.matter.body.setAngularVelocity(body, steer * (0.068 + lowSpeedSteerBoost * 0.052));
+
+    const throttle = clamp((throttleSignal + 1) / 2, 0, 1);
     this.matter.body.applyForce(body, body.position, {
-      x: forward.x * throttle * 0.00115,
-      y: forward.y * throttle * 0.00115,
+      x: forward.x * (0.00034 + throttle * 0.00108),
+      y: forward.y * (0.00034 + throttle * 0.00108),
     });
 
     this.limitSpeed(body);
@@ -949,13 +956,14 @@ export class RacerScene extends Phaser.Scene {
     car.speedScore += speed * 0.018;
     car.fitness = this.calculateCarFitness(car, false, false);
 
-    const centerDistance = nearestDistanceToPolyline(currentPosition, this.track.centerline);
-    if (centerDistance > this.track.width * 0.39) {
-      car.wallPenalty += (centerDistance - this.track.width * 0.39) * 0.045;
+    const wallClearance = this.nearestWallSensorDistance(currentPosition, body.angle);
+    const safeClearance = Math.max(CAR_WIDTH * 0.95, this.track.width * 0.16);
+    if (wallClearance < safeClearance) {
+      car.wallPenalty += (safeClearance - wallClearance) * 0.022;
     }
     if (this.shouldCompleteSegment(car)) {
       this.completeSegment(car, currentPosition);
-    } else if (centerDistance > this.track.width * 0.68) {
+    } else if (nearestDistanceToPolyline(currentPosition, this.track.centerline) > this.track.width * 1.45) {
       this.killCar(car, true, false);
     } else if (car.age - car.lastProgressAge > 330 && speed < 1.2) {
       this.killCar(car, false, true);
@@ -1038,25 +1046,34 @@ export class RacerScene extends Phaser.Scene {
 
   private readInputs(car: SimCar, position: { x: number; y: number }, speed: number): number[] {
     const body = car.body;
-    const sensorValues = SENSOR_ANGLES.map((sensorAngle) => {
-      const angle = body.angle + sensorAngle;
-      const nearest = this.wallSegments.reduce((best, [a, b]) => {
-        const hit = raySegmentDistance(position, angle, SENSOR_RANGE, a, b);
-        return hit === null ? best : Math.min(best, hit);
-      }, SENSOR_RANGE);
-      return nearest / SENSOR_RANGE;
-    });
-    const checkpoint = this.track.checkpoints[car.nextCheckpoint] ?? this.track.checkpoints[0];
-    const desiredAngle = Math.atan2(checkpoint.center.y - position.y, checkpoint.center.x - position.x);
-    const headingError = wrapAngle(desiredAngle - body.angle) / Math.PI;
-    const centerDistance = nearestDistanceToPolyline(position, this.track.centerline);
+    const sensorValues = this.wallSensorValues(position, body.angle).map((value) => value / SENSOR_RANGE);
+    const progress = nearestPointOnClosedPath(position, this.track.centerline);
+    const lookAhead = Math.max(95, 115 + speed * 22);
+    const nearPose = this.poseAtTrackDistance(progress.progressDistance + lookAhead);
+    const farPose = this.poseAtTrackDistance(progress.progressDistance + lookAhead * 2.35);
+    const headingError = wrapAngle(nearPose.angle - body.angle) / Math.PI;
+    const turnAhead = wrapAngle(farPose.angle - nearPose.angle) / Math.PI;
 
     return [
       ...sensorValues,
       Math.min(1, speed / MAX_SPEED),
       headingError,
-      1 - Math.min(1, centerDistance / (this.track.width * 0.5)),
+      turnAhead,
     ];
+  }
+
+  private wallSensorValues(position: { x: number; y: number }, baseAngle: number): number[] {
+    return SENSOR_ANGLES.map((sensorAngle) => {
+      const angle = baseAngle + sensorAngle;
+      return this.wallSegments.reduce((best, [a, b]) => {
+        const hit = raySegmentDistance(position, angle, SENSOR_RANGE, a, b);
+        return hit === null ? best : Math.min(best, hit);
+      }, SENSOR_RANGE);
+    });
+  }
+
+  private nearestWallSensorDistance(position: { x: number; y: number }, baseAngle: number): number {
+    return Math.min(...this.wallSensorValues(position, baseAngle));
   }
 
   private findNextCheckpoint(startDistance: number): number {
@@ -1067,6 +1084,32 @@ export class RacerScene extends Phaser.Scene {
     const normalizedDistance = ((startDistance % this.trackLength) + this.trackLength) % this.trackLength;
     const checkpoint = this.track.checkpoints.find((candidate) => candidate.progress * this.trackLength > normalizedDistance + 8);
     return checkpoint?.index ?? 0;
+  }
+
+  private poseAtTrackDistance(targetDistance: number): { x: number; y: number; angle: number } {
+    if (this.track.centerline.length < 2 || this.trackLength <= 0) {
+      return this.track.spawnPose;
+    }
+
+    const wrappedDistance = ((targetDistance % this.trackLength) + this.trackLength) % this.trackLength;
+    let cursor = 0;
+
+    for (let index = 0; index < this.track.centerline.length; index += 1) {
+      const start = this.track.centerline[index];
+      const end = this.track.centerline[(index + 1) % this.track.centerline.length];
+      const length = distance(start, end);
+      if (cursor + length >= wrappedDistance) {
+        const local = length > 0 ? (wrappedDistance - cursor) / length : 0;
+        return {
+          x: start.x + (end.x - start.x) * local,
+          y: start.y + (end.y - start.y) * local,
+          angle: Math.atan2(end.y - start.y, end.x - start.x),
+        };
+      }
+      cursor += length;
+    }
+
+    return this.track.spawnPose;
   }
 
   private limitSpeed(body: MatterBody): void {

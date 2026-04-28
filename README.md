@@ -47,9 +47,9 @@ The UI keeps the advanced genetic algorithm details out of the way by default. U
 
 Each driver owns a JSON-compatible genome: a flat list of weights for a fixed neural network.
 
-- **Inputs:** wall ray distances, speed, heading error, centerline offset, and progress signals.
+- **Inputs:** wall ray distances, speed, heading error to the look-ahead tangent, and upcoming turn curvature.
 - **Network:** small MLP controller with steering and throttle outputs.
-- **Fitness before a full lap:** forward centerline progress, checkpoint progress, speed, stability, and wall distance.
+- **Fitness before a full lap:** forward progress, checkpoint progress, speed, sector completion, and safe wall clearance.
 - **Fitness penalties:** crash, reversing, stagnation, and driving too close to walls.
 - **Final ranking:** once a car completes a lap, shorter full-lap time wins.
 - **Evolution:** elites are retained, the best historical driver seeds teacher mutations, strong parents cross over, and random immigrants keep exploration alive.

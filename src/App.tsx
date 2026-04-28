@@ -458,7 +458,7 @@ export function App() {
             <span>{phaseText} - goal {Math.round(stats.goalProgress * 100)}%</span>
             <span>Hardest sector {formatSector(stats.hardestSegmentIndex)} - coverage {Math.round(stats.segmentCoverage * 100)}%</span>
             <span>Best run = shortest completed lap; score fallback {formatScore(stats.bestScore)}</span>
-            <span>8 sensor inputs - 7 hidden neurons - 2 driving outputs</span>
+            <span>5 wall rays + turn preview - 7 hidden neurons - steer/gas/brake</span>
             <span>Elite {stats.eliteCount} - Teacher children {stats.teacherChildren} - Finishers {stats.lapCompletions}</span>
           </section>
         </aside>

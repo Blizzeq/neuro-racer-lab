@@ -130,20 +130,20 @@ export function calculateSmartSegmentFitness(input: {
   const targetDistance = Math.max(1, input.targetDistance);
   const progress = clamp(input.progress, 0, targetDistance * 1.35);
   const progressRatio = clamp(progress / targetDistance, 0, 1);
-  const completionBonus = input.completed ? 1850 + Math.max(0, 640 - input.age * 0.4) : 0;
+  const completionBonus = input.completed ? 2100 + Math.max(0, 900 - input.age * 0.65) : 0;
   const crashPenalty = input.crashed ? 145 : 0;
   const stagnantPenalty = input.stagnant ? 115 : 0;
 
   return Math.max(
     0,
-    progress * 1.55
+    progress * 1.72
       + progressRatio * 920
-      + input.speedScore * 1.2
+      + input.speedScore * 1.42
       + completionBonus
       - crashPenalty
       - stagnantPenalty
       - (input.reversePenalty ?? 0) * 1.15
-      - (input.wallPenalty ?? 0) * 1.2,
+      - (input.wallPenalty ?? 0) * 0.72,
   );
 }
 

@@ -122,13 +122,13 @@ export function calculateFitness(input: {
   const reversePenalty = input.reversePenalty ?? 0;
   const wallPenalty = input.wallPenalty ?? 0;
   const lapBonus = input.completedLap && input.bestLapTicks
-    ? 6000 + Math.max(0, 6000 - input.bestLapTicks * 2.5)
+    ? 9000 + Math.max(0, 9000 - input.bestLapTicks * 3.2)
     : 0;
   return Math.max(
     0,
-    (input.progressScore ?? 0) * 1.15
-      + input.checkpoints * 90
-      + input.speedScore * 1.35
+    (input.progressScore ?? 0) * 1.32
+      + input.checkpoints * 70
+      + input.speedScore * 1.55
       + input.age * 0.018
       + lapBonus
       - crashPenalty

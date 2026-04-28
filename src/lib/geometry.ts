@@ -2,6 +2,7 @@ import type { Checkpoint, Point, TrackDefinition } from '../types';
 
 const TRACK_ID_PREFIX = 'track';
 export const DEFAULT_TRACK_WIDTH = 92;
+export const MIN_TRACK_WIDTH = 124;
 export const WORLD_WIDTH = 9600;
 export const WORLD_HEIGHT = 6400;
 
@@ -172,9 +173,10 @@ export function generateTrack(rawPoints: Point[], width = DEFAULT_TRACK_WIDTH, n
     throw new Error('A track needs at least four distinct points.');
   }
 
+  const trackWidth = Math.max(width, MIN_TRACK_WIDTH);
   const smoothed = chaikin(cleaned, 2);
   const centerline = resampleClosedPath(smoothed, 20);
-  const halfWidth = width / 2;
+  const halfWidth = trackWidth / 2;
   const normals = centerline.map((_point, index) => {
     const previous = centerline[(index - 1 + centerline.length) % centerline.length];
     const next = centerline[(index + 1) % centerline.length];
@@ -190,7 +192,7 @@ export function generateTrack(rawPoints: Point[], width = DEFAULT_TRACK_WIDTH, n
   return {
     id: `${TRACK_ID_PREFIX}-${Date.now().toString(36)}-${Math.round(Math.random() * 1000)}`,
     name,
-    width,
+    width: trackWidth,
     centerline,
     leftBoundary,
     rightBoundary,
