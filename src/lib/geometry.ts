@@ -2,8 +2,8 @@ import type { Checkpoint, Point, TrackDefinition } from '../types';
 
 const TRACK_ID_PREFIX = 'track';
 export const DEFAULT_TRACK_WIDTH = 92;
-export const WORLD_WIDTH = 1120;
-export const WORLD_HEIGHT = 720;
+export const WORLD_WIDTH = 2800;
+export const WORLD_HEIGHT = 1800;
 
 export function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -92,29 +92,73 @@ export function raySegmentDistance(origin: Point, angle: number, maxDistance: nu
 }
 
 export function nearestDistanceToPolyline(point: Point, points: Point[]): number {
-  return closedSegments(points).reduce((nearest, [a, b]) => {
+  return nearestPointOnClosedPath(point, points).distance;
+}
+
+export function nearestPointOnClosedPath(point: Point, points: Point[]): {
+  point: Point;
+  distance: number;
+  progress: number;
+  progressDistance: number;
+  segmentIndex: number;
+} {
+  const segments = closedSegments(points);
+  const lengths = segments.map(([a, b]) => distance(a, b));
+  const totalLength = lengths.reduce((sum, length) => sum + length, 0);
+  let traversed = 0;
+  let nearest = {
+    point: points[0],
+    distance: Number.POSITIVE_INFINITY,
+    progress: 0,
+    progressDistance: 0,
+    segmentIndex: 0,
+  };
+
+  for (let index = 0; index < segments.length; index += 1) {
+    const [a, b] = segments[index];
     const ab = subtract(b, a);
     const ap = subtract(point, a);
     const lengthSquared = Math.max(0.00001, dot(ab, ab));
     const t = clamp(dot(ap, ab) / lengthSquared, 0, 1);
     const projection = add(a, scale(ab, t));
-    return Math.min(nearest, distance(point, projection));
-  }, Number.POSITIVE_INFINITY);
+    const projectedDistance = distance(point, projection);
+    const progressDistance = traversed + lengths[index] * t;
+
+    if (projectedDistance < nearest.distance) {
+      nearest = {
+        point: projection,
+        distance: projectedDistance,
+        progress: totalLength > 0 ? progressDistance / totalLength : 0,
+        progressDistance,
+        segmentIndex: index,
+      };
+    }
+
+    traversed += lengths[index];
+  }
+
+  return nearest;
+}
+
+export function closedPathLength(points: Point[]): number {
+  return closedSegments(points).reduce((nearest, [a, b]) => {
+    return nearest + distance(a, b);
+  }, 0);
 }
 
 export function createPresetTrack(): TrackDefinition {
   return generateTrack(
     [
-      { x: 225, y: 365 },
-      { x: 285, y: 235 },
-      { x: 475, y: 160 },
-      { x: 690, y: 190 },
-      { x: 865, y: 275 },
-      { x: 925, y: 430 },
-      { x: 780, y: 560 },
-      { x: 565, y: 520 },
-      { x: 465, y: 410 },
-      { x: 340, y: 500 },
+      { x: 520, y: 940 },
+      { x: 620, y: 520 },
+      { x: 1060, y: 330 },
+      { x: 1620, y: 390 },
+      { x: 2110, y: 630 },
+      { x: 2280, y: 1040 },
+      { x: 1960, y: 1390 },
+      { x: 1430, y: 1300 },
+      { x: 1220, y: 1020 },
+      { x: 900, y: 1280 },
     ],
     DEFAULT_TRACK_WIDTH,
     'Neon Circuit',
@@ -169,8 +213,8 @@ function removeNearDuplicates(points: Point[], minDistance: number): Point[] {
 
   for (const point of points) {
     const safePoint = {
-      x: clamp(point.x, 55, WORLD_WIDTH - 55),
-      y: clamp(point.y, 55, WORLD_HEIGHT - 55),
+      x: clamp(point.x, 70, WORLD_WIDTH - 70),
+      y: clamp(point.y, 70, WORLD_HEIGHT - 70),
     };
     const previous = result.at(-1);
     if (!previous || distance(previous, safePoint) >= minDistance) {

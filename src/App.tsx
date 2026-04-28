@@ -2,8 +2,12 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Bot,
   BrainCircuit,
+  Crosshair,
   Download,
+  FileDown,
+  FileUp,
   Gauge,
+  Maximize2,
   Pause,
   PenLine,
   Play,
@@ -12,11 +16,14 @@ import {
   Save,
   Upload,
   Zap,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
-import type { TrainingConfig, TrainingStats } from './types';
+import type { CameraState, TrainingConfig, TrainingMode, TrainingStats } from './types';
 import { DEFAULT_TRAINING_CONFIG } from './types';
 import { RacerStage } from './components/RacerStage';
 import type { RacerScene } from './sim/RacerScene';
+import { snapshotTime } from './lib/storage';
 import './styles.css';
 
 const INITIAL_STATS: TrainingStats = {
@@ -28,14 +35,41 @@ const INITIAL_STATS: TrainingStats = {
   populationSize: DEFAULT_TRAINING_CONFIG.populationSize,
   checkpointProgress: 0,
   maxCheckpoint: 0,
+  crashRate: 0,
+  bestProgress: 0,
+  eliteCount: 0,
+  teacherChildren: 0,
   history: [],
   status: 'ready',
 };
 
+const MODE_PRESETS: Record<TrainingMode, Pick<TrainingConfig, 'mutationRate' | 'elitismRate' | 'teacherCloneRate' | 'randomImmigrantRate'>> = {
+  explore: {
+    mutationRate: 0.24,
+    elitismRate: 0.1,
+    teacherCloneRate: 0.25,
+    randomImmigrantRate: 0.28,
+  },
+  balanced: {
+    mutationRate: 0.16,
+    elitismRate: 0.14,
+    teacherCloneRate: 0.34,
+    randomImmigrantRate: 0.18,
+  },
+  exploit: {
+    mutationRate: 0.1,
+    elitismRate: 0.18,
+    teacherCloneRate: 0.48,
+    randomImmigrantRate: 0.08,
+  },
+};
+
 export function App() {
   const sceneRef = useRef<RacerScene | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
   const [stats, setStats] = useState<TrainingStats>(INITIAL_STATS);
   const [config, setConfig] = useState<TrainingConfig>(DEFAULT_TRAINING_CONFIG);
+  const [camera, setCamera] = useState<CameraState>({ zoom: 1, scrollX: 0, scrollY: 0, followBest: false });
   const [running, setRunning] = useState(false);
   const [drawing, setDrawing] = useState(false);
   const [trackName, setTrackName] = useState('Neon Circuit');
@@ -58,6 +92,9 @@ export function App() {
 
   function handleReady(scene: RacerScene | null): void {
     sceneRef.current = scene;
+    if (scene) {
+      setCamera(scene.getCameraState());
+    }
   }
 
   function toggleRun(): void {
@@ -77,6 +114,7 @@ export function App() {
     setRunning(false);
     setDrawing(false);
     setTrackName('Neon Circuit');
+    setCamera(sceneRef.current?.getCameraState() ?? camera);
     setNotice('Preset loaded');
   }
 
@@ -89,7 +127,7 @@ export function App() {
   function saveCurrent(): void {
     const snapshot = sceneRef.current?.saveCurrentSnapshot();
     if (snapshot) {
-      setNotice(`Saved ${new Date(snapshot.savedAt).toLocaleTimeString()}`);
+      setNotice(`Saved ${new Date(snapshot.timestamp).toLocaleTimeString()}`);
       setCanLoad(true);
     }
   }
@@ -99,11 +137,86 @@ export function App() {
     if (snapshot) {
       setRunning(false);
       setDrawing(false);
+      if (snapshot.version === 2) {
+        setConfig(snapshot.config);
+      }
       setTrackName(snapshot.track.name);
-      setNotice('Save loaded');
+      setCamera(sceneRef.current?.getCameraState() ?? camera);
+      setNotice(`Loaded ${new Date(snapshotTime(snapshot)).toLocaleTimeString()}`);
     } else {
       setNotice('No save found');
     }
+  }
+
+  function applyTrainingMode(trainingMode: TrainingMode): void {
+    setConfig((value) => ({
+      ...value,
+      trainingMode,
+      ...MODE_PRESETS[trainingMode],
+    }));
+    setNotice(`${trainingMode[0].toUpperCase()}${trainingMode.slice(1)} mode`);
+  }
+
+  function handleZoomIn(): void {
+    sceneRef.current?.zoomIn();
+    setCamera(sceneRef.current?.getCameraState() ?? camera);
+  }
+
+  function handleZoomOut(): void {
+    sceneRef.current?.zoomOut();
+    setCamera(sceneRef.current?.getCameraState() ?? camera);
+  }
+
+  function handleFit(): void {
+    sceneRef.current?.fitToTrack();
+    setCamera(sceneRef.current?.getCameraState() ?? camera);
+    setNotice('Camera fitted');
+  }
+
+  function handleFollowBest(): void {
+    const next = sceneRef.current?.toggleFollowBest();
+    if (next) {
+      setCamera(next);
+      setNotice(next.followBest ? 'Following best' : 'Free camera');
+    }
+  }
+
+  function exportSnapshot(): void {
+    const snapshot = sceneRef.current?.exportCurrentSnapshot();
+    if (!snapshot) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `neuro-racer-lab-${Date.now()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setNotice('JSON exported');
+  }
+
+  function openImportPicker(): void {
+    importInputRef.current?.click();
+  }
+
+  function importSnapshot(file: File | undefined): void {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const snapshot = sceneRef.current?.importSnapshot(String(reader.result ?? ''));
+      if (snapshot) {
+        setConfig(snapshot.config);
+        setTrackName(snapshot.track.name);
+        setRunning(false);
+        setDrawing(false);
+        setCamera(sceneRef.current?.getCameraState() ?? camera);
+        setNotice('JSON imported');
+      } else {
+        setNotice('Import failed');
+      }
+      if (importInputRef.current) {
+        importInputRef.current.value = '';
+      }
+    };
+    reader.readAsText(file);
   }
 
   return (
@@ -132,9 +245,26 @@ export function App() {
             onTrackChange={(track) => {
               setTrackName(track.name);
               setNotice('Track generated');
+              setCamera(sceneRef.current?.getCameraState() ?? camera);
             }}
             onStorageChange={setCanLoad}
           />
+
+          <div className="camera-toolbar" aria-label="Camera controls">
+            <button className="icon-button" type="button" onClick={handleZoomOut} title="Zoom out">
+              <ZoomOut size={18} />
+            </button>
+            <button className="icon-button" type="button" onClick={handleZoomIn} title="Zoom in">
+              <ZoomIn size={18} />
+            </button>
+            <button className="icon-button" type="button" onClick={handleFit} title="Fit track">
+              <Maximize2 size={18} />
+            </button>
+            <button className={`icon-button ${camera.followBest ? 'active' : ''}`} type="button" onClick={handleFollowBest} title="Follow best car">
+              <Crosshair size={18} />
+            </button>
+            <span>{Math.round(camera.zoom * 100)}%</span>
+          </div>
         </div>
 
         <aside className="control-panel">
@@ -154,6 +284,8 @@ export function App() {
             <Metric icon={<Gauge size={18} />} label="Best" value={formatScore(stats.bestScore)} />
             <Metric icon={<Zap size={18} />} label="Best ever" value={formatScore(stats.bestEver)} />
             <Metric icon={<Bot size={18} />} label="Alive" value={`${stats.aliveCount}/${stats.populationSize}`} />
+            <Metric icon={<Crosshair size={18} />} label="Lap progress" value={`${Math.round(stats.bestProgress * 100)}%`} />
+            <Metric icon={<RefreshCcw size={18} />} label="Crash rate" value={`${Math.round(stats.crashRate * 100)}%`} />
           </section>
 
           <section className="panel-section">
@@ -170,6 +302,18 @@ export function App() {
           </section>
 
           <section className="panel-section controls">
+            <div className="control-row">
+              <label htmlFor="mode">Mode</label>
+              <select
+                id="mode"
+                value={config.trainingMode}
+                onChange={(event) => applyTrainingMode(event.target.value as TrainingMode)}
+              >
+                <option value="explore">Explore</option>
+                <option value="balanced">Balanced</option>
+                <option value="exploit">Exploit</option>
+              </select>
+            </div>
             <div className="control-row">
               <label htmlFor="population">Population</label>
               <select
@@ -228,14 +372,30 @@ export function App() {
               <Upload size={18} />
               <span>Load</span>
             </button>
+            <button className="icon-button" type="button" onClick={exportSnapshot}>
+              <FileDown size={18} />
+              <span>Export</span>
+            </button>
+            <button className="icon-button" type="button" onClick={openImportPicker}>
+              <FileUp size={18} />
+              <span>Import</span>
+            </button>
           </section>
 
           <section className="panel-section algorithm-note">
             <strong>Genome</strong>
             <span>8 sensor inputs · 7 hidden neurons · 2 driving outputs</span>
+            <span>Elite {stats.eliteCount} · Teacher children {stats.teacherChildren} · {config.trainingMode}</span>
           </section>
         </aside>
       </section>
+      <input
+        ref={importInputRef}
+        className="file-input"
+        type="file"
+        accept="application/json,.json"
+        onChange={(event) => importSnapshot(event.target.files?.[0])}
+      />
     </main>
   );
 }

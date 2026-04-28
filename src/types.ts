@@ -39,12 +39,18 @@ export type Genome = {
   generation: number;
 };
 
+export type TrainingMode = 'explore' | 'balanced' | 'exploit';
+
 export type TrainingConfig = {
   populationSize: number;
   mutationRate: number;
   crossoverRate: number;
   maxSteps: number;
   speedMultiplier: number;
+  elitismRate: number;
+  teacherCloneRate: number;
+  randomImmigrantRate: number;
+  trainingMode: TrainingMode;
 };
 
 export type TrainingStats = {
@@ -56,11 +62,30 @@ export type TrainingStats = {
   populationSize: number;
   checkpointProgress: number;
   maxCheckpoint: number;
+  crashRate: number;
+  bestProgress: number;
+  eliteCount: number;
+  teacherChildren: number;
   history: number[];
   status: 'ready' | 'drawing' | 'running' | 'paused' | 'evolving';
 };
 
-export type SaveSnapshot = {
+export type CameraState = {
+  zoom: number;
+  scrollX: number;
+  scrollY: number;
+  followBest: boolean;
+};
+
+export type ReplayFrame = {
+  x: number;
+  y: number;
+  angle: number;
+  tick: number;
+  score: number;
+};
+
+export type LegacySaveSnapshot = {
   version: 1;
   savedAt: string;
   track: TrackDefinition;
@@ -68,10 +93,25 @@ export type SaveSnapshot = {
   generation: number;
 };
 
+export type ExportSnapshot = {
+  version: 2;
+  timestamp: string;
+  track: TrackDefinition;
+  bestGenome: Genome | null;
+  config: TrainingConfig;
+  generation: number;
+};
+
+export type SaveSnapshot = LegacySaveSnapshot | ExportSnapshot;
+
 export const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
   populationSize: 64,
-  mutationRate: 0.18,
+  mutationRate: 0.16,
   crossoverRate: 0.72,
-  maxSteps: 1100,
+  maxSteps: 1500,
   speedMultiplier: 3,
+  elitismRate: 0.14,
+  teacherCloneRate: 0.34,
+  randomImmigrantRate: 0.18,
+  trainingMode: 'balanced',
 };

@@ -32,16 +32,25 @@ describe('neural genome', () => {
 });
 
 describe('fitness scoring', () => {
-  it('rewards checkpoint progress more than survival alone', () => {
-    const slow = calculateFitness({ checkpoints: 0, speedScore: 5, age: 500, crashed: false, stagnant: false });
-    const progressed = calculateFitness({ checkpoints: 4, speedScore: 5, age: 200, crashed: false, stagnant: false });
+  it('rewards continuous forward progress more than survival alone', () => {
+    const slow = calculateFitness({ checkpoints: 0, progressScore: 20, speedScore: 5, age: 500, crashed: false, stagnant: false });
+    const progressed = calculateFitness({ checkpoints: 1, progressScore: 520, speedScore: 5, age: 200, crashed: false, stagnant: false });
 
     expect(progressed).toBeGreaterThan(slow);
   });
 
-  it('penalizes crash and stagnation', () => {
-    const clean = calculateFitness({ checkpoints: 2, speedScore: 20, age: 300, crashed: false, stagnant: false });
-    const failed = calculateFitness({ checkpoints: 2, speedScore: 20, age: 300, crashed: true, stagnant: true });
+  it('penalizes crash, stagnation, reversing, and wall scraping', () => {
+    const clean = calculateFitness({ checkpoints: 2, progressScore: 300, speedScore: 20, age: 300, crashed: false, stagnant: false });
+    const failed = calculateFitness({
+      checkpoints: 2,
+      progressScore: 300,
+      speedScore: 20,
+      age: 300,
+      crashed: true,
+      stagnant: true,
+      reversePenalty: 40,
+      wallPenalty: 30,
+    });
 
     expect(failed).toBeLessThan(clean);
   });

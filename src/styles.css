@@ -65,6 +65,7 @@ button:disabled {
   flex-direction: column;
   border-radius: 8px;
   overflow: hidden;
+  position: relative;
 }
 
 .topbar {
@@ -113,6 +114,33 @@ h1 {
   max-width: 100%;
   max-height: 100%;
   outline: none;
+}
+
+.camera-toolbar {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(143, 163, 187, 0.22);
+  border-radius: 8px;
+  background: rgba(8, 10, 15, 0.78);
+  backdrop-filter: blur(10px);
+}
+
+.camera-toolbar .icon-button {
+  width: 36px;
+  min-height: 34px;
+}
+
+.camera-toolbar span {
+  min-width: 48px;
+  color: #aebbc9;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .control-panel {
@@ -344,6 +372,10 @@ h1 {
 
 .algorithm-note strong {
   color: #ffce45;
+}
+
+.file-input {
+  display: none;
 }
 
 @media (max-width: 1120px) {

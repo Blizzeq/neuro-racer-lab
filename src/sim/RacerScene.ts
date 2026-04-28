@@ -1,13 +1,25 @@
 import Phaser from 'phaser';
-import type { Genome, SaveSnapshot, TrackDefinition, TrainingConfig, TrainingStats } from '../types';
+import type {
+  CameraState,
+  ExportSnapshot,
+  Genome,
+  ReplayFrame,
+  SaveSnapshot,
+  TrackDefinition,
+  TrainingConfig,
+  TrainingStats,
+} from '../types';
 import { DEFAULT_TRAINING_CONFIG } from '../types';
 import {
   WORLD_HEIGHT,
   WORLD_WIDTH,
+  clamp,
+  closedPathLength,
   createPresetTrack,
   distance,
   generateTrack,
   nearestDistanceToPolyline,
+  nearestPointOnClosedPath,
   raySegmentDistance,
   segmentsIntersect,
   trackWallSegments,
@@ -15,7 +27,7 @@ import {
 } from '../lib/geometry';
 import { bestGenome, createInitialPopulation, evolvePopulation } from '../lib/evolution';
 import { calculateFitness, cloneGenome, evaluateNetwork } from '../lib/neural';
-import { hasSnapshot, loadSnapshot, saveSnapshot } from '../lib/storage';
+import { createExportSnapshot, hasSnapshot, loadSnapshot, parseExportSnapshot, saveSnapshot } from '../lib/storage';
 
 type MatterBody = MatterJS.BodyType;
 
@@ -38,10 +50,18 @@ type SimCar = {
   nextCheckpoint: number;
   checkpointCount: number;
   speedScore: number;
+  progressScore: number;
+  bestProgress: number;
+  previousProgressDistance: number;
+  lapOffset: number;
+  reversePenalty: number;
+  wallPenalty: number;
   fitness: number;
   lastCheckpointAge: number;
+  lastProgressAge: number;
   previousPosition: { x: number; y: number };
   trail: Array<{ x: number; y: number }>;
+  replay: ReplayFrame[];
   color: number;
 };
 
@@ -52,11 +72,14 @@ const CAR_WIDTH = 27;
 const CAR_HEIGHT = 14;
 const WALL_THICKNESS = 12;
 const CAR_COLORS = [0x38f8d4, 0xffce45, 0xff5b7c, 0x67a6ff, 0xd6ff5a, 0xf489ff];
+const CAR_CATEGORY = 0x0001;
+const WALL_CATEGORY = 0x0002;
 
 export class RacerScene extends Phaser.Scene {
   private callbacks: SceneCallbacks;
   private track: TrackDefinition = createPresetTrack();
   private wallSegments = trackWallSegments(this.track);
+  private trackLength = closedPathLength(this.track.centerline);
   private wallBodies: MatterBody[] = [];
   private cars: SimCar[] = [];
   private population: Genome[] = [];
@@ -65,11 +88,19 @@ export class RacerScene extends Phaser.Scene {
   private generation = 0;
   private generationStep = 0;
   private history: number[] = [];
+  private lastEvolution = { eliteCount: 0, teacherChildren: 0, randomImmigrants: 0 };
   private running = false;
   private drawing = false;
   private drawPoints: Array<{ x: number; y: number }> = [];
+  private cameraState: CameraState = { zoom: 1, scrollX: 0, scrollY: 0, followBest: false };
+  private panning = false;
+  private panStart = { x: 0, y: 0, scrollX: 0, scrollY: 0 };
+  private ghostReplay: ReplayFrame[] = [];
+  private heatPoints: Array<{ x: number; y: number; strength: number }> = [];
   private config: TrainingConfig = { ...DEFAULT_TRAINING_CONFIG };
   private trackGraphics?: Phaser.GameObjects.Graphics;
+  private ghostGraphics?: Phaser.GameObjects.Graphics;
+  private heatGraphics?: Phaser.GameObjects.Graphics;
   private carGraphics?: Phaser.GameObjects.Graphics;
   private sensorGraphics?: Phaser.GameObjects.Graphics;
   private drawGraphics?: Phaser.GameObjects.Graphics;
@@ -81,13 +112,17 @@ export class RacerScene extends Phaser.Scene {
 
   create(): void {
     this.trackGraphics = this.add.graphics();
+    this.heatGraphics = this.add.graphics();
+    this.ghostGraphics = this.add.graphics();
     this.sensorGraphics = this.add.graphics();
     this.carGraphics = this.add.graphics();
     this.drawGraphics = this.add.graphics();
     this.matter.world.disableGravity();
-    this.matter.world.setBounds(-80, -80, WORLD_WIDTH + 160, WORLD_HEIGHT + 160, 80);
+    this.matter.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT, 80);
+    this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
     this.matter.world.pause();
     this.installCollisionHandler();
+    this.installCameraInput();
     this.installDrawingInput();
     this.setTrack(this.track, false);
     this.resetTraining();
@@ -97,6 +132,7 @@ export class RacerScene extends Phaser.Scene {
 
   update(): void {
     if (!this.running || this.cars.length === 0) {
+      this.updateFollowCamera();
       this.renderCars();
       return;
     }
@@ -114,6 +150,7 @@ export class RacerScene extends Phaser.Scene {
     }
 
     this.renderCars();
+    this.updateFollowCamera();
     if (Math.round(this.generationStep) % 8 === 0) {
       this.emitStats('running');
     }
@@ -178,8 +215,8 @@ export class RacerScene extends Phaser.Scene {
     this.emitStats(this.running ? 'running' : 'paused');
   }
 
-  saveCurrentSnapshot(): SaveSnapshot {
-    const snapshot = saveSnapshot(this.track, this.bestGenomeEver, this.generation);
+  saveCurrentSnapshot(): ExportSnapshot {
+    const snapshot = saveSnapshot(this.track, this.bestGenomeEver, this.config, this.generation);
     this.callbacks.onStorageChange(true);
     return snapshot;
   }
@@ -194,9 +231,67 @@ export class RacerScene extends Phaser.Scene {
     this.bestGenomeEver = snapshot.bestGenome ? cloneGenome(snapshot.bestGenome) : null;
     this.bestScoreEver = this.bestGenomeEver?.score ?? 0;
     this.generation = snapshot.generation;
+    if (snapshot.version === 2) {
+      this.applyConfig(snapshot.config);
+    }
     this.setTrack(snapshot.track, true);
     this.resetTraining();
     return snapshot;
+  }
+
+  exportCurrentSnapshot(): ExportSnapshot {
+    return createExportSnapshot(this.track, this.bestGenomeEver, this.config, this.generation);
+  }
+
+  importSnapshot(raw: string): ExportSnapshot | null {
+    const snapshot = parseExportSnapshot(raw);
+    if (!snapshot) {
+      return null;
+    }
+
+    this.setRunning(false);
+    this.bestGenomeEver = snapshot.bestGenome ? cloneGenome(snapshot.bestGenome) : null;
+    this.bestScoreEver = this.bestGenomeEver?.score ?? 0;
+    this.generation = snapshot.generation;
+    this.config = { ...this.config, ...snapshot.config };
+    this.setTrack(snapshot.track, true);
+    this.resetTraining();
+    return snapshot;
+  }
+
+  zoomIn(): void {
+    this.setCameraZoom(this.cameras.main.zoom * 1.18);
+  }
+
+  zoomOut(): void {
+    this.setCameraZoom(this.cameras.main.zoom / 1.18);
+  }
+
+  fitToTrack(): void {
+    const camera = this.cameras.main;
+    const margin = 180;
+    const width = Math.max(200, this.track.bounds.maxX - this.track.bounds.minX + margin * 2);
+    const height = Math.max(200, this.track.bounds.maxY - this.track.bounds.minY + margin * 2);
+    const zoom = clamp(Math.min(camera.width / width, camera.height / height), 0.22, 1.35);
+    camera.setZoom(zoom);
+    camera.centerOn(
+      (this.track.bounds.minX + this.track.bounds.maxX) / 2,
+      (this.track.bounds.minY + this.track.bounds.maxY) / 2,
+    );
+    this.syncCameraState();
+  }
+
+  toggleFollowBest(): CameraState {
+    this.cameraState = {
+      ...this.cameraState,
+      followBest: !this.cameraState.followBest,
+    };
+    return this.cameraState;
+  }
+
+  getCameraState(): CameraState {
+    this.syncCameraState();
+    return this.cameraState;
   }
 
   getCurrentTrack(): TrackDefinition {
@@ -206,12 +301,58 @@ export class RacerScene extends Phaser.Scene {
   private setTrack(track: TrackDefinition, notify: boolean): void {
     this.track = track;
     this.wallSegments = trackWallSegments(track);
+    this.trackLength = closedPathLength(track.centerline);
     this.destroyWalls();
     this.createWalls();
     this.drawTrack();
+    this.fitToTrack();
     if (notify) {
       this.callbacks.onTrackChange(track);
     }
+  }
+
+  private installCameraInput(): void {
+    this.input.mouse?.disableContextMenu();
+
+    this.input.on('wheel', (pointer: Phaser.Input.Pointer, _gameObjects: unknown, _deltaX: number, deltaY: number) => {
+      const before = { x: pointer.worldX, y: pointer.worldY };
+      const zoomFactor = deltaY > 0 ? 0.9 : 1.1;
+      this.setCameraZoom(this.cameras.main.zoom * zoomFactor);
+      const after = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+      this.cameras.main.scrollX += before.x - after.x;
+      this.cameras.main.scrollY += before.y - after.y;
+      this.syncCameraState();
+    });
+
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (this.drawing) return;
+      if (pointer.rightButtonDown() || pointer.middleButtonDown()) {
+        this.panning = true;
+        this.cameraState.followBest = false;
+        this.panStart = {
+          x: pointer.x,
+          y: pointer.y,
+          scrollX: this.cameras.main.scrollX,
+          scrollY: this.cameras.main.scrollY,
+        };
+      }
+    });
+
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      if (!this.panning) return;
+      const camera = this.cameras.main;
+      camera.scrollX = this.panStart.scrollX - (pointer.x - this.panStart.x) / camera.zoom;
+      camera.scrollY = this.panStart.scrollY - (pointer.y - this.panStart.y) / camera.zoom;
+      this.syncCameraState();
+    });
+
+    this.input.on('pointerup', () => {
+      this.panning = false;
+    });
+
+    this.input.on('pointerupoutside', () => {
+      this.panning = false;
+    });
   }
 
   private installCollisionHandler(): void {
@@ -274,6 +415,10 @@ export class RacerScene extends Phaser.Scene {
         label: 'wall',
         friction: 0,
         restitution: 0.1,
+        collisionFilter: {
+          category: WALL_CATEGORY,
+          mask: CAR_CATEGORY,
+        },
       }) as MatterBody;
       this.matter.body.setAngle(body, angle);
       this.wallBodies.push(body);
@@ -301,13 +446,23 @@ export class RacerScene extends Phaser.Scene {
       score: car.fitness,
     }));
     const generationBest = bestGenome(scoredPopulation);
+    const bestCar = this.cars.reduce<SimCar | null>((best, car) => (!best || car.fitness > best.fitness ? car : best), null);
+    if (bestCar && bestCar.replay.length > 6) {
+      this.ghostReplay = bestCar.replay.slice(-260);
+    }
     if (generationBest && generationBest.score >= this.bestScoreEver) {
       this.bestScoreEver = generationBest.score;
       this.bestGenomeEver = cloneGenome(generationBest);
     }
 
     this.history = [...this.history.slice(-47), generationBest?.score ?? 0];
-    this.population = evolvePopulation(scoredPopulation, this.config, this.generation);
+    const evolution = evolvePopulation(scoredPopulation, this.config, this.generation, this.bestGenomeEver);
+    this.population = evolution.population;
+    this.lastEvolution = {
+      eliteCount: evolution.eliteCount,
+      teacherChildren: evolution.teacherChildren,
+      randomImmigrants: evolution.randomImmigrants,
+    };
     this.generation += 1;
     this.startGeneration();
     if (this.running) {
@@ -333,6 +488,10 @@ export class RacerScene extends Phaser.Scene {
         frictionAir: 0.055,
         friction: 0.02,
         restitution: 0.12,
+        collisionFilter: {
+          category: CAR_CATEGORY,
+          mask: WALL_CATEGORY,
+        },
       },
     ) as MatterBody;
     this.matter.body.setAngle(body, spawn.angle);
@@ -353,10 +512,18 @@ export class RacerScene extends Phaser.Scene {
       nextCheckpoint: 1 % this.track.checkpoints.length,
       checkpointCount: 0,
       speedScore: 0,
+      progressScore: 0,
+      bestProgress: 0,
+      previousProgressDistance: nearestPointOnClosedPath({ x: body.position.x, y: body.position.y }, this.track.centerline).progressDistance,
+      lapOffset: 0,
+      reversePenalty: 0,
+      wallPenalty: 0,
       fitness: 0,
       lastCheckpointAge: 0,
+      lastProgressAge: 0,
       previousPosition: { x: body.position.x, y: body.position.y },
       trail: [{ x: body.position.x, y: body.position.y }],
+      replay: [],
       color: CAR_COLORS[index % CAR_COLORS.length],
     };
   }
@@ -365,6 +532,7 @@ export class RacerScene extends Phaser.Scene {
     const body = car.body;
     const currentPosition = { x: body.position.x, y: body.position.y };
     this.updateCheckpointProgress(car, currentPosition);
+    this.updateContinuousProgress(car, currentPosition);
     const speed = Math.hypot(body.velocity.x, body.velocity.y);
     const inputs = this.readInputs(car, currentPosition, speed);
     const [steer, throttleSignal] = evaluateNetwork(car.genome.weights, inputs);
@@ -390,18 +558,24 @@ export class RacerScene extends Phaser.Scene {
     car.speedScore += speed * 0.018;
     car.fitness = calculateFitness({
       checkpoints: car.checkpointCount,
+      progressScore: car.progressScore,
       speedScore: car.speedScore,
       age: car.age,
       crashed: car.crashed,
       stagnant: car.stagnant,
+      reversePenalty: car.reversePenalty,
+      wallPenalty: car.wallPenalty,
     });
 
     const centerDistance = nearestDistanceToPolyline(currentPosition, this.track.centerline);
+    if (centerDistance > this.track.width * 0.39) {
+      car.wallPenalty += (centerDistance - this.track.width * 0.39) * 0.045;
+    }
     if (centerDistance > this.track.width * 0.68) {
       this.killCar(car, true, false);
-    } else if (car.age - car.lastCheckpointAge > 360 && speed < 1.2) {
+    } else if (car.age - car.lastProgressAge > 330 && speed < 1.2) {
       this.killCar(car, false, true);
-    } else if (car.age - car.lastCheckpointAge > 620) {
+    } else if (car.age - car.lastProgressAge > 620) {
       this.killCar(car, false, true);
     }
 
@@ -411,7 +585,50 @@ export class RacerScene extends Phaser.Scene {
       if (car.trail.length > 28) {
         car.trail.shift();
       }
+      car.replay.push({
+        x: currentPosition.x,
+        y: currentPosition.y,
+        angle: body.angle,
+        tick: Math.round(car.age),
+        score: car.fitness,
+      });
+      if (car.replay.length > 320) {
+        car.replay.shift();
+      }
+      if (car.fitness > 120) {
+        this.heatPoints.push({ x: currentPosition.x, y: currentPosition.y, strength: Math.min(1, car.fitness / 3000) });
+        if (this.heatPoints.length > 900) {
+          this.heatPoints.shift();
+        }
+      }
     }
+  }
+
+  private updateContinuousProgress(car: SimCar, currentPosition: { x: number; y: number }): void {
+    const progress = nearestPointOnClosedPath(currentPosition, this.track.centerline);
+    let absoluteProgress = progress.progressDistance + car.lapOffset;
+    const halfTrack = this.trackLength * 0.5;
+
+    if (absoluteProgress - car.previousProgressDistance < -halfTrack) {
+      car.lapOffset += this.trackLength;
+      absoluteProgress += this.trackLength;
+    } else if (absoluteProgress - car.previousProgressDistance > halfTrack) {
+      car.lapOffset -= this.trackLength;
+      absoluteProgress -= this.trackLength;
+    }
+
+    const delta = absoluteProgress - car.previousProgressDistance;
+    if (delta > 0) {
+      car.progressScore += delta;
+      car.bestProgress = Math.max(car.bestProgress, absoluteProgress);
+      if (delta > 0.45) {
+        car.lastProgressAge = car.age;
+      }
+    } else {
+      car.reversePenalty += Math.abs(delta) * 0.65;
+    }
+
+    car.previousProgressDistance = absoluteProgress;
   }
 
   private updateCheckpointProgress(car: SimCar, currentPosition: { x: number; y: number }): void {
@@ -474,6 +691,9 @@ export class RacerScene extends Phaser.Scene {
       age: car.age,
       crashed,
       stagnant,
+      progressScore: car.progressScore,
+      reversePenalty: car.reversePenalty,
+      wallPenalty: car.wallPenalty,
     });
     this.matter.body.setVelocity(car.body, { x: 0, y: 0 });
     this.matter.body.setAngularVelocity(car.body, 0);
@@ -530,11 +750,11 @@ export class RacerScene extends Phaser.Scene {
   }
 
   private drawGrid(graphics: Phaser.GameObjects.Graphics): void {
-    graphics.lineStyle(1, 0x16202a, 0.72);
-    for (let x = 0; x <= WORLD_WIDTH; x += 40) {
+    graphics.lineStyle(1, 0x16202a, 0.62);
+    for (let x = 0; x <= WORLD_WIDTH; x += 80) {
       graphics.lineBetween(x, 0, x, WORLD_HEIGHT);
     }
-    for (let y = 0; y <= WORLD_HEIGHT; y += 40) {
+    for (let y = 0; y <= WORLD_HEIGHT; y += 80) {
       graphics.lineBetween(0, y, WORLD_WIDTH, y);
     }
   }
@@ -564,6 +784,8 @@ export class RacerScene extends Phaser.Scene {
     carGraphics.clear();
     sensorGraphics.clear();
     const focusCar = this.selectFocusCar();
+    this.renderHeat();
+    this.renderGhost();
     this.renderTrails(carGraphics);
 
     for (const car of this.cars) {
@@ -573,6 +795,37 @@ export class RacerScene extends Phaser.Scene {
     if (focusCar?.alive) {
       this.drawSensors(sensorGraphics, focusCar);
     }
+  }
+
+  private renderHeat(): void {
+    const graphics = this.heatGraphics;
+    if (!graphics) return;
+    graphics.clear();
+    for (const point of this.heatPoints) {
+      graphics.fillStyle(0xff5b7c, 0.06 + point.strength * 0.14);
+      graphics.fillCircle(point.x, point.y, 9 + point.strength * 8);
+    }
+  }
+
+  private renderGhost(): void {
+    const graphics = this.ghostGraphics;
+    if (!graphics) return;
+    graphics.clear();
+    if (this.ghostReplay.length < 3) {
+      return;
+    }
+
+    graphics.lineStyle(3, 0xffffff, 0.22);
+    graphics.strokePoints(this.ghostReplay.map((frame) => ({ x: frame.x, y: frame.y })), false);
+    const frame = this.ghostReplay[Math.min(this.ghostReplay.length - 1, Math.floor((this.generationStep / 5) % this.ghostReplay.length))];
+    const points = [
+      this.rotatePoint(frame.x, frame.y, -CAR_WIDTH * 0.45, -CAR_HEIGHT * 0.55, frame.angle),
+      this.rotatePoint(frame.x, frame.y, CAR_WIDTH * 0.55, 0, frame.angle),
+      this.rotatePoint(frame.x, frame.y, -CAR_WIDTH * 0.45, CAR_HEIGHT * 0.55, frame.angle),
+      this.rotatePoint(frame.x, frame.y, -CAR_WIDTH * 0.2, 0, frame.angle),
+    ];
+    graphics.fillStyle(0xffffff, 0.22);
+    graphics.fillPoints(points, true, true);
   }
 
   private renderTrails(graphics: Phaser.GameObjects.Graphics): void {
@@ -650,6 +903,8 @@ export class RacerScene extends Phaser.Scene {
       ? scored.reduce((sum, car) => sum + car.fitness, 0) / scored.length
       : 0;
     const maxCheckpoint = scored.reduce((best, car) => Math.max(best, car.checkpointCount), 0);
+    const bestProgress = scored.reduce((best, car) => Math.max(best, car.bestProgress), 0);
+    const crashed = scored.filter((car) => !car.alive && car.crashed).length;
 
     this.callbacks.onStats({
       generation: this.generation,
@@ -662,6 +917,10 @@ export class RacerScene extends Phaser.Scene {
         ? Math.min(1, maxCheckpoint / this.track.checkpoints.length)
         : 0,
       maxCheckpoint,
+      crashRate: scored.length > 0 ? crashed / scored.length : 0,
+      bestProgress: this.trackLength > 0 ? bestProgress / this.trackLength : 0,
+      eliteCount: this.lastEvolution.eliteCount,
+      teacherChildren: this.lastEvolution.teacherChildren,
       history: this.history,
       status,
     });
@@ -669,5 +928,32 @@ export class RacerScene extends Phaser.Scene {
 
   private getCarId(body: MatterBody): string | undefined {
     return (body.plugin as { carId?: string } | undefined)?.carId;
+  }
+
+  private setCameraZoom(zoom: number): void {
+    this.cameras.main.setZoom(clamp(zoom, 0.22, 2.2));
+    this.syncCameraState();
+  }
+
+  private updateFollowCamera(): void {
+    if (!this.cameraState.followBest) {
+      return;
+    }
+    const focusCar = this.selectFocusCar();
+    if (!focusCar?.alive) {
+      return;
+    }
+    this.cameras.main.centerOn(focusCar.body.position.x, focusCar.body.position.y);
+    this.syncCameraState();
+  }
+
+  private syncCameraState(): void {
+    const camera = this.cameras.main;
+    this.cameraState = {
+      ...this.cameraState,
+      zoom: camera.zoom,
+      scrollX: camera.scrollX,
+      scrollY: camera.scrollY,
+    };
   }
 }

@@ -87,16 +87,28 @@ export function cloneGenome(genome: Genome): Genome {
 
 export function calculateFitness(input: {
   checkpoints: number;
+  progressScore?: number;
   speedScore: number;
   age: number;
   crashed: boolean;
   stagnant: boolean;
+  reversePenalty?: number;
+  wallPenalty?: number;
 }): number {
-  const crashPenalty = input.crashed ? 45 : 0;
-  const stagnantPenalty = input.stagnant ? 35 : 0;
+  const crashPenalty = input.crashed ? 80 : 0;
+  const stagnantPenalty = input.stagnant ? 65 : 0;
+  const reversePenalty = input.reversePenalty ?? 0;
+  const wallPenalty = input.wallPenalty ?? 0;
   return Math.max(
     0,
-    input.checkpoints * 125 + input.speedScore * 1.8 + input.age * 0.035 - crashPenalty - stagnantPenalty,
+    (input.progressScore ?? 0) * 1.15
+      + input.checkpoints * 90
+      + input.speedScore * 1.35
+      + input.age * 0.018
+      - crashPenalty
+      - stagnantPenalty
+      - reversePenalty
+      - wallPenalty,
   );
 }
 

@@ -25,6 +25,18 @@ describe('track generation', () => {
     expect(nearestDistanceToPolyline(track.spawnPose, track.centerline)).toBeLessThan(1);
   });
 
+  it('supports tracks longer than the old 1120x720 viewport', () => {
+    const track = generateTrack([
+      { x: 180, y: 220 },
+      { x: 2450, y: 260 },
+      { x: 2530, y: 1480 },
+      { x: 240, y: 1520 },
+    ]);
+
+    expect(track.bounds.maxX).toBeGreaterThan(1120);
+    expect(track.bounds.maxY).toBeGreaterThan(720);
+  });
+
   it('rejects underspecified tracks', () => {
     expect(() => generateTrack([
       { x: 10, y: 10 },
