@@ -42,7 +42,13 @@ import {
 } from '../lib/curriculum';
 import { calculateFitness, cloneGenome, evaluateNetwork } from '../lib/neural';
 import { createExportSnapshot, hasSnapshot, loadSnapshot, parseExportSnapshot, saveSnapshot } from '../lib/storage';
-import { calculateLapGoalTicks, finalExamComplete, goalProgress, shouldStartFinalExam } from '../lib/trainingGoal';
+import {
+  calculateLapGoalTicks,
+  finalExamComplete,
+  goalProgress,
+  nextFinalExamRoundsCompleted,
+  shouldStartFinalExam,
+} from '../lib/trainingGoal';
 
 type MatterBody = MatterJS.BodyType;
 
@@ -760,7 +766,7 @@ export class RacerScene extends Phaser.Scene {
     }
 
     if (wasFinalExam) {
-      this.finalRoundsCompleted += 1;
+      this.finalRoundsCompleted = nextFinalExamRoundsCompleted(this.finalRoundsCompleted, Boolean(generationLapBest));
       if (finalExamComplete(this.finalRoundsCompleted, this.config.finalExamRounds)) {
         this.completeTraining();
         return;

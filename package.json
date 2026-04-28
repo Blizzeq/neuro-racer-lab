@@ -33,7 +33,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "observe:training": "node scripts/observe-training.mjs"
+    "observe:training": "node scripts/observe-training.mjs",
+    "smoke:ui": "node scripts/smoke-ui.mjs"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",

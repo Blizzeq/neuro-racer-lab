@@ -98,6 +98,7 @@ Open the Vite URL shown in the terminal.
 | `npm run build` | Type-check and build the static production site. |
 | `npm run preview` | Preview the production build locally. |
 | `npm run observe:training` | Launch Chrome, start training, and log 45 seconds of Smart Coach metrics through the debug hook. |
+| `npm run smoke:ui` | Run a browser smoke test for zoom/fit, drawing, save/load, export/import, and starting training. |
 
 ## Training Observer
 
@@ -105,10 +106,16 @@ For tuning the learning loop, run the dev server in one terminal and the observe
 
 ```bash
 npm run dev
-node scripts/observe-training.mjs --seconds=60 --mode=smartCoach --speed=8
+node scripts/observe-training.mjs --seconds=60 --mode=smartCoach --speed=8 --seed=qa-01
 ```
 
-The observer launches the installed Chrome through `playwright-core`, clicks Start, and records phase, generation, alive cars, crash rate, best full-lap time, goal progress, record attempts, and sector coverage. It is useful for comparing Smart Coach with `--mode fullLap` on the same track.
+The observer launches the installed Chrome through `playwright-core`, clicks Start, and records phase, generation, alive cars, crash rate, best full-lap time, goal progress, record attempts, and sector coverage. Use the same `--seed` when comparing Smart Coach with `--mode fullLap` or `--mode manualLab`; run observers one at a time because parallel WebGL sessions can distort results.
+
+For UI regression checks, keep the dev server running and execute:
+
+```bash
+npm run smoke:ui
+```
 
 ## Project Structure
 

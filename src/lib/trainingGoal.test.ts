@@ -1,10 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { calculateLapGoalTicks, finalExamComplete, goalProgress, shouldStartFinalExam } from './trainingGoal';
+import {
+  calculateLapGoalTicks,
+  finalExamComplete,
+  goalProgress,
+  nextFinalExamRoundsCompleted,
+  shouldStartFinalExam,
+} from './trainingGoal';
 
 describe('training goal', () => {
   it('creates a finite lap target from track length', () => {
     expect(calculateLapGoalTicks(4200, 1500)).toBeGreaterThan(360);
     expect(calculateLapGoalTicks(4200, 1500)).toBeLessThanOrEqual(1650);
+  });
+
+  it('scales the lap target for very long tracks instead of capping it too low', () => {
+    expect(calculateLapGoalTicks(20_000, 1500)).toBeGreaterThan(3000);
   });
 
   it('tracks progress toward the target lap time', () => {
@@ -38,5 +48,10 @@ describe('training goal', () => {
   it('finishes after the configured final rounds', () => {
     expect(finalExamComplete(2, 3)).toBe(false);
     expect(finalExamComplete(3, 3)).toBe(true);
+  });
+
+  it('counts only completed final exam laps as confirmed rounds', () => {
+    expect(nextFinalExamRoundsCompleted(1, false)).toBe(1);
+    expect(nextFinalExamRoundsCompleted(1, true)).toBe(2);
   });
 });

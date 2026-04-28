@@ -2,7 +2,8 @@ const TARGET_SPEED_PX_PER_TICK = 5.8;
 
 export function calculateLapGoalTicks(trackLength: number, maxSteps: number): number {
   const rawTarget = Math.round(trackLength / TARGET_SPEED_PX_PER_TICK);
-  return Math.max(360, Math.min(Math.max(720, Math.round(maxSteps * 1.1)), rawTarget));
+  const minimumTarget = Math.min(360, Math.max(180, Math.round(maxSteps * 0.24)));
+  return Math.max(minimumTarget, rawTarget);
 }
 
 export function goalProgress(bestLapTicks: number | null | undefined, targetLapTicks: number): number {
@@ -45,4 +46,8 @@ export function shouldStartFinalExam(input: {
 
 export function finalExamComplete(roundsCompleted: number, targetRounds: number): boolean {
   return roundsCompleted >= Math.max(1, targetRounds);
+}
+
+export function nextFinalExamRoundsCompleted(roundsCompleted: number, completedLap: boolean): number {
+  return completedLap ? roundsCompleted + 1 : roundsCompleted;
 }

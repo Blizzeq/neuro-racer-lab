@@ -6,6 +6,7 @@ const url = args.url ?? 'http://127.0.0.1:5173';
 const seconds = Number(args.seconds ?? args.duration ?? 45);
 const mode = args.mode ?? 'smartCoach';
 const speed = Number(args.speed ?? 8);
+const seed = String(args.seed ?? 'neuro-racer-observer');
 const chromePath = args.chrome ?? process.env.CHROME_PATH ?? findChrome();
 
 if (!chromePath) {
@@ -23,6 +24,23 @@ const browser = await chromium.launch({
 });
 
 const page = await browser.newPage({ viewport: { width: 1440, height: 980 } });
+await page.addInitScript((initialSeed) => {
+  let state = 0;
+  const seedText = String(initialSeed);
+  for (let index = 0; index < seedText.length; index += 1) {
+    state = Math.imul(state ^ seedText.charCodeAt(index), 2654435761) >>> 0;
+  }
+  if (state === 0) {
+    state = 0x6d2b79f5;
+  }
+  Math.random = () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+}, seed);
 const consoleEvents = [];
 page.on('console', (message) => {
   if (message.type() === 'error' || message.type() === 'warning') {
@@ -45,6 +63,7 @@ try {
   }
 
   console.log(`Observing ${mode} for ${seconds}s at ${url}`);
+  console.log(`seed: ${seed}`);
   console.log('time  gen  phase                 alive   crash  best-lap  goal  attempts');
 
   const startedAt = Date.now();
@@ -146,6 +165,7 @@ function parseArgs(raw) {
   if (positional[0] && !result.seconds && !result.duration) result.seconds = positional[0];
   if (positional[1] && !result.mode) result.mode = positional[1];
   if (positional[2] && !result.speed) result.speed = positional[2];
+  if (positional[3] && !result.seed) result.seed = positional[3];
   return result;
 }
 
