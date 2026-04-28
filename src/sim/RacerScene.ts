@@ -38,6 +38,7 @@ import {
   createTrainingStarts,
   hardestSegmentIndex,
   segmentCoverage,
+  shouldUseFullLapBootstrap,
 } from '../lib/curriculum';
 import { calculateFitness, cloneGenome, evaluateNetwork } from '../lib/neural';
 import { createExportSnapshot, hasSnapshot, loadSnapshot, parseExportSnapshot, saveSnapshot } from '../lib/storage';
@@ -679,8 +680,11 @@ export class RacerScene extends Phaser.Scene {
   private startGeneration(): void {
     this.destroyCars();
     this.generationStep = 0;
+    const fullLapBootstrap = shouldUseFullLapBootstrap(this.config, this.generation, this.bestLapTicksEver);
     this.trainingStarts = this.finalExamActive
       ? Array.from({ length: this.config.populationSize }, () => this.createFullLapStart('finalExam', true))
+      : fullLapBootstrap
+        ? Array.from({ length: this.config.populationSize }, () => this.createFullLapStart(this.generation < 2 ? 'learningStart' : 'recordAttempt', false))
       : createTrainingStarts(
         this.track,
         this.trackSegments,
@@ -701,9 +705,6 @@ export class RacerScene extends Phaser.Scene {
         : this.generation < 2
           ? 'learningStart'
           : sectorStart?.phase ?? 'recordAttempt';
-    if (validationRun) {
-      this.recordAttempts += this.trainingStarts.filter((start) => start.kind === 'fullLap').length;
-    }
     this.drawTrack();
     this.cars = this.population.map((genome, index) => this.createCar(genome, index));
     this.renderCars();
@@ -717,13 +718,23 @@ export class RacerScene extends Phaser.Scene {
         this.recordSegmentAttempt(car);
       }
     }
-    const scoredPopulation = this.cars.map((car) => ({
-      ...cloneGenome(car.genome),
-      score: car.fitness,
-      completedLap: car.completedLap,
-      bestLapTicks: car.bestLapTicks,
+    const scoredCars = this.cars.map((car) => ({
+      car,
+      genome: {
+        ...cloneGenome(car.genome),
+        score: this.selectionFitnessForCar(car),
+        completedLap: car.completedLap,
+        bestLapTicks: car.bestLapTicks,
+      },
     }));
+    this.recordAttempts += scoredCars.filter((entry) => entry.car.trainingStart.kind === 'fullLap').length;
+    const scoredPopulation = scoredCars.map((entry) => entry.genome);
     const generationBest = bestGenome(scoredPopulation);
+    const generationFullLapBest = bestGenome(
+      scoredCars
+        .filter((entry) => entry.car.trainingStart.kind === 'fullLap')
+        .map((entry) => entry.genome),
+    );
     const generationLapBest = bestGenome(scoredPopulation.filter((genome) => genome.completedLap && genome.bestLapTicks));
     const bestCar = this.selectBestCar();
     if (bestCar && bestCar.replay.length > 6) {
@@ -736,9 +747,11 @@ export class RacerScene extends Phaser.Scene {
     }
     if (generationBest) {
       this.bestScoreEver = Math.max(this.bestScoreEver, generationBest.score);
-      if (!this.bestCoachGenome || compareGenomes(generationBest, this.bestCoachGenome) > 0) {
-        this.bestCoachGenome = cloneGenome(generationBest);
-      }
+    }
+    if (generationFullLapBest && (!this.bestCoachGenome || compareGenomes(generationFullLapBest, this.bestCoachGenome) > 0)) {
+      this.bestCoachGenome = cloneGenome(generationFullLapBest);
+    } else if (!this.bestCoachGenome && generationBest) {
+      this.bestCoachGenome = cloneGenome(generationBest);
     }
     if (generationLapBest && (!this.bestGenomeEver || compareGenomes(generationLapBest, this.bestGenomeEver) > 0)) {
       this.bestGenomeEver = cloneGenome(generationLapBest);
@@ -766,8 +779,8 @@ export class RacerScene extends Phaser.Scene {
       this.trainingPhase = 'finalExam';
     }
 
-    this.history = [...this.history.slice(-47), generationBest?.score ?? 0];
-    const evolution = evolvePopulation(scoredPopulation, this.config, this.generation, this.bestCoachGenome ?? this.bestGenomeEver);
+    this.history = [...this.history.slice(-47), generationFullLapBest?.score ?? generationBest?.score ?? 0];
+    const evolution = evolvePopulation(scoredPopulation, this.config, this.generation, this.bestGenomeEver ?? this.bestCoachGenome ?? generationBest);
     this.population = evolution.population;
     this.lastEvolution = {
       eliteCount: evolution.eliteCount,
@@ -828,12 +841,16 @@ export class RacerScene extends Phaser.Scene {
     const hasFullLapRun = this.showcaseMode
       || this.finalExamActive
       || this.config.trainingMode !== 'smartCoach'
-      || this.trainingStarts.some((start) => start.kind === 'fullLap' && start.validation);
+      || this.trainingStarts.some((start) => start.kind === 'fullLap');
     if (!hasFullLapRun) {
       return this.config.maxSteps;
     }
 
-    return Math.max(this.config.maxSteps, Math.round(this.goalTargetLapTicks * 1.45));
+    const validationOrExam = this.showcaseMode
+      || this.finalExamActive
+      || this.config.trainingMode !== 'smartCoach'
+      || this.trainingStarts.some((start) => start.kind === 'fullLap' && start.validation);
+    return Math.max(this.config.maxSteps, Math.round(this.goalTargetLapTicks * (validationOrExam ? 1.45 : 1.25)));
   }
 
   private createCar(genome: Genome, index: number): SimCar {
@@ -1213,6 +1230,19 @@ export class RacerScene extends Phaser.Scene {
       completedLap: car.completedLap,
       bestLapTicks: car.bestLapTicks,
     });
+  }
+
+  private selectionFitnessForCar(car: SimCar): number {
+    if (car.completedLap && car.bestLapTicks) {
+      return car.fitness;
+    }
+
+    if (car.trainingStart.kind === 'segment') {
+      return car.fitness * 0.74;
+    }
+
+    const lapProgress = clamp(car.bestProgress / Math.max(1, this.trackLength), 0, 1);
+    return car.fitness + lapProgress * 420 + 120;
   }
 
   private shouldCompleteSegment(car: SimCar): boolean {

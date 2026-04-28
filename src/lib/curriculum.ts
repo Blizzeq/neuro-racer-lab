@@ -10,6 +10,7 @@ import { add, clamp, closedPathLength, closedSegments, distance, normalize, scal
 
 const MIN_SEGMENTS = 4;
 const MAX_SEGMENTS = 18;
+export const SMART_LAP_BOOTSTRAP_GENERATIONS = 6;
 
 export function buildTrackSegments(track: TrackDefinition, desiredCount: number): TrackSegment[] {
   const pointCount = track.centerline.length;
@@ -52,6 +53,12 @@ export function createSegmentScores(segments: TrackSegment[]): SegmentScore[] {
   }));
 }
 
+export function shouldUseFullLapBootstrap(config: TrainingConfig, generation: number, bestLapTicks: number | null): boolean {
+  return config.trainingMode === 'smartCoach'
+    && bestLapTicks === null
+    && generation < SMART_LAP_BOOTSTRAP_GENERATIONS;
+}
+
 export function createTrainingStarts(
   track: TrackDefinition,
   segments: TrackSegment[],
@@ -67,10 +74,14 @@ export function createTrainingStarts(
   }
 
   const validation = generation > 0 && generation % Math.max(1, config.fullLapValidationInterval) === 0;
-  const segmentIndexes = selectTrainingSegmentIndexes(segments, scores, config, generation, random);
-  const fullLapCount = validation
-    ? Math.max(1, Math.ceil(populationSize * 0.72))
-    : Math.max(4, Math.ceil(populationSize * 0.22));
+  const fullLapRatio = validation ? 0.82 : generation < 4 ? 0.68 : 0.56;
+  const minimumSectorStarts = populationSize >= 12 ? Math.max(2, Math.round(populationSize * 0.1)) : 0;
+  const fullLapCount = clamp(
+    Math.round(populationSize * fullLapRatio),
+    Math.min(populationSize, 4),
+    Math.max(Math.min(populationSize, 4), populationSize - minimumSectorStarts),
+  );
+  const segmentIndexes = selectTrainingSegmentIndexes(segments, scores, config, generation, populationSize - fullLapCount, random);
 
   return Array.from({ length: populationSize }, (_value, index) => {
     if (index < fullLapCount) {
@@ -130,20 +141,20 @@ export function calculateSmartSegmentFitness(input: {
   const targetDistance = Math.max(1, input.targetDistance);
   const progress = clamp(input.progress, 0, targetDistance * 1.35);
   const progressRatio = clamp(progress / targetDistance, 0, 1);
-  const completionBonus = input.completed ? 2100 + Math.max(0, 900 - input.age * 0.65) : 0;
-  const crashPenalty = input.crashed ? 145 : 0;
-  const stagnantPenalty = input.stagnant ? 115 : 0;
+  const completionBonus = input.completed ? 1320 + Math.max(0, 520 - input.age * 0.48) : 0;
+  const crashPenalty = input.crashed ? 170 : 0;
+  const stagnantPenalty = input.stagnant ? 140 : 0;
 
   return Math.max(
     0,
-    progress * 1.72
-      + progressRatio * 920
-      + input.speedScore * 1.42
+    progress * 1.28
+      + progressRatio * 720
+      + input.speedScore * 1.18
       + completionBonus
       - crashPenalty
       - stagnantPenalty
-      - (input.reversePenalty ?? 0) * 1.15
-      - (input.wallPenalty ?? 0) * 0.72,
+      - (input.reversePenalty ?? 0) * 1.32
+      - (input.wallPenalty ?? 0) * 0.88,
   );
 }
 
@@ -194,33 +205,61 @@ function selectTrainingSegmentIndexes(
   scores: SegmentScore[],
   config: TrainingConfig,
   generation: number,
+  startCount: number,
   random: () => number,
 ): number[] {
-  const count = clamp(config.smartStartsPerGeneration, 1, segments.length);
-  const selected = new Set<number>();
-  const hardest = hardestSegmentIndex(scores);
-  if (hardest !== null) {
-    selected.add(hardest);
-  }
+  const count = clamp(Math.max(config.smartStartsPerGeneration, startCount), 1, segments.length);
+  const selected: number[] = [];
+  const add = (index: number | null | undefined) => {
+    if (index === null || index === undefined || !Number.isFinite(index)) {
+      return;
+    }
+    const normalized = ((Math.round(index) % segments.length) + segments.length) % segments.length;
+    if (!selected.includes(normalized)) {
+      selected.push(normalized);
+    }
+  };
 
-  selected.add(generation % segments.length);
+  const frontier = frontierSegmentIndex(segments, scores);
+  add(frontier);
+  add(frontier + 1);
 
-  const ranked = [...scores]
-    .sort((a, b) => segmentDifficulty(b) - segmentDifficulty(a))
-    .map((score) => score.segmentIndex);
-
-  for (const index of ranked) {
-    selected.add(index);
-    if (selected.size >= count) {
+  for (const index of rankedHardSegments(scores)) {
+    add(index);
+    if (selected.length >= count) {
       break;
     }
   }
 
-  while (selected.size < count) {
-    selected.add(Math.floor(random() * segments.length));
+  add(generation % segments.length);
+
+  while (selected.length < count) {
+    add(Math.floor(random() * segments.length));
   }
 
-  return [...selected];
+  return selected;
+}
+
+function frontierSegmentIndex(segments: TrackSegment[], scores: SegmentScore[]): number {
+  const weakSegment = segments.find((segment) => {
+    const score = scores[segment.index];
+    return !score || segmentMastery(score) < 0.68;
+  });
+
+  return weakSegment?.index ?? hardestSegmentIndex(scores) ?? 0;
+}
+
+function rankedHardSegments(scores: SegmentScore[]): number[] {
+  return [...scores]
+    .sort((a, b) => segmentDifficulty(b) - segmentDifficulty(a))
+    .map((score) => score.segmentIndex);
+}
+
+function segmentMastery(score: SegmentScore): number {
+  const attempts = Math.max(1, score.attempts);
+  const crashRate = score.crashes / attempts;
+  const completionRate = score.completions / attempts;
+  return clamp(score.bestProgress * 0.6 + completionRate * 0.4 - crashRate * 0.25, 0, 1);
 }
 
 function segmentDifficulty(score: SegmentScore): number {

@@ -26,6 +26,19 @@ import type { RacerScene } from './sim/RacerScene';
 import { snapshotTime } from './lib/storage';
 import './styles.css';
 
+declare global {
+  interface Window {
+    __NEURO_RACER_DEBUG__?: {
+      stats: TrainingStats;
+      config: TrainingConfig;
+      running: boolean;
+      drawing: boolean;
+      sceneReady: boolean;
+      notice: string;
+    };
+  }
+}
+
 const INITIAL_STATS: TrainingStats = {
   generation: 0,
   bestScore: 0,
@@ -61,11 +74,11 @@ const PLAN_PRESETS: Record<TrainingMode, Partial<TrainingConfig>> = {
   smartCoach: {
     mutationRate: 0.16,
     elitismRate: 0.14,
-    teacherCloneRate: 0.34,
-    randomImmigrantRate: 0.18,
+    teacherCloneRate: 0.3,
+    randomImmigrantRate: 0.16,
     smartSegmentCount: 12,
     smartStartsPerGeneration: 5,
-    fullLapValidationInterval: 5,
+    fullLapValidationInterval: 4,
     targetLapTicks: null,
     finalExamRounds: 3,
     goalPatienceGenerations: 18,
@@ -94,6 +107,7 @@ export function App() {
   const [camera, setCamera] = useState<CameraState>({ zoom: 1, scrollX: 0, scrollY: 0, followBest: false });
   const [running, setRunning] = useState(false);
   const [drawing, setDrawing] = useState(false);
+  const [sceneReady, setSceneReady] = useState(false);
   const [trackName, setTrackName] = useState('Neon Circuit');
   const [canLoad, setCanLoad] = useState(false);
   const [notice, setNotice] = useState('Ready');
@@ -111,6 +125,17 @@ export function App() {
   }, [drawing]);
 
   useEffect(() => {
+    window.__NEURO_RACER_DEBUG__ = {
+      stats,
+      config,
+      running,
+      drawing,
+      sceneReady,
+      notice,
+    };
+  }, [stats, config, running, drawing, sceneReady, notice]);
+
+  useEffect(() => {
     if (stats.status === 'complete') {
       setRunning(false);
       setNotice('Training complete');
@@ -124,12 +149,20 @@ export function App() {
 
   function handleReady(scene: RacerScene | null): void {
     sceneRef.current = scene;
+    setSceneReady(Boolean(scene));
     if (scene) {
       setCamera(scene.getCameraState());
+      if (running) {
+        scene.setRunning(true);
+      }
     }
   }
 
   function toggleRun(): void {
+    if (!sceneRef.current) {
+      setNotice('Loading simulator');
+      return;
+    }
     if (!running && stats.status === 'complete') {
       setNotice('Run champion or reset');
       return;
@@ -276,7 +309,7 @@ export function App() {
               <h1>Neuro Racer Lab</h1>
             </div>
             <div className="run-cluster">
-              <button className="icon-button primary" type="button" onClick={toggleRun} title={running ? 'Pause' : 'Start'}>
+              <button className="icon-button primary" type="button" onClick={toggleRun} title={running ? 'Pause' : 'Start'} disabled={!sceneReady}>
                 {running ? <Pause size={20} /> : <Play size={20} />}
                 <span>{running ? 'Pause' : 'Start'}</span>
               </button>
@@ -530,7 +563,7 @@ function formatPlanName(trainingMode: TrainingMode): string {
 function formatPlanNote(trainingMode: TrainingMode): string {
   switch (trainingMode) {
     case 'smartCoach':
-      return 'Sectors + record checks';
+      return 'Full laps + hard sectors';
     case 'fullLap':
       return 'Start line only';
     case 'manualLab':

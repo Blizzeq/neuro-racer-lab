@@ -1,4 +1,4 @@
-const TARGET_SPEED_PX_PER_TICK = 3.25;
+const TARGET_SPEED_PX_PER_TICK = 5.8;
 
 export function calculateLapGoalTicks(trackLength: number, maxSteps: number): number {
   const rawTarget = Math.round(trackLength / TARGET_SPEED_PX_PER_TICK);

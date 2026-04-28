@@ -7,6 +7,7 @@ import {
   createSegmentScores,
   createTrainingStarts,
   poseAtDistance,
+  shouldUseFullLapBootstrap,
 } from './curriculum';
 
 describe('smart curriculum training', () => {
@@ -50,10 +51,48 @@ describe('smart curriculum training', () => {
       32,
       () => 0.42,
     );
+    const fullLapStarts = starts.filter((start) => start.kind === 'fullLap');
+    const sectorStarts = starts.filter((start) => start.kind === 'segment');
 
     expect(starts).toHaveLength(32);
-    expect(starts.some((start) => start.kind === 'fullLap')).toBe(true);
-    expect(starts.some((start) => start.kind === 'segment')).toBe(true);
+    expect(fullLapStarts.length).toBeGreaterThan(starts.length / 2);
+    expect(sectorStarts.length).toBeGreaterThan(0);
+  });
+
+  it('anchors validation generations even more strongly on full-lap attempts', () => {
+    const track = createPresetTrack();
+    const segments = buildTrackSegments(track, 10);
+    const scores = createSegmentScores(segments);
+    const config = { ...DEFAULT_TRAINING_CONFIG, populationSize: 40, trainingMode: 'smartCoach' as const };
+    const normal = createTrainingStarts(track, segments, scores, config, 3, 40, () => 0.42);
+    const validation = createTrainingStarts(track, segments, scores, config, config.fullLapValidationInterval, 40, () => 0.42);
+
+    expect(validation.filter((start) => start.kind === 'fullLap').length)
+      .toBeGreaterThan(normal.filter((start) => start.kind === 'fullLap').length);
+    expect(validation.some((start) => start.validation)).toBe(true);
+  });
+
+  it('starts sector practice from the first weak frontier segment', () => {
+    const track = createPresetTrack();
+    const segments = buildTrackSegments(track, 10);
+    const scores = createSegmentScores(segments).map((score, index) => ({
+      ...score,
+      attempts: 6,
+      completions: index < 4 ? 5 : 0,
+      crashes: index === 4 ? 4 : 0,
+      bestProgress: index < 4 ? 1 : index === 4 ? 0.22 : 0,
+    }));
+    const starts = createTrainingStarts(
+      track,
+      segments,
+      scores,
+      { ...DEFAULT_TRAINING_CONFIG, populationSize: 32, trainingMode: 'smartCoach' },
+      8,
+      32,
+      () => 0.1,
+    );
+
+    expect(starts.find((start) => start.kind === 'segment')?.segmentIndex).toBe(4);
   });
 
   it('uses full lap starts only outside Smart Coach', () => {
@@ -70,6 +109,24 @@ describe('smart curriculum training', () => {
     );
 
     expect(starts.every((start) => start.kind === 'fullLap')).toBe(true);
+  });
+
+  it('keeps Smart Coach in full-lap bootstrap until the first completed lap', () => {
+    expect(shouldUseFullLapBootstrap(
+      { ...DEFAULT_TRAINING_CONFIG, trainingMode: 'smartCoach' },
+      2,
+      null,
+    )).toBe(true);
+    expect(shouldUseFullLapBootstrap(
+      { ...DEFAULT_TRAINING_CONFIG, trainingMode: 'smartCoach' },
+      8,
+      null,
+    )).toBe(false);
+    expect(shouldUseFullLapBootstrap(
+      { ...DEFAULT_TRAINING_CONFIG, trainingMode: 'smartCoach' },
+      2,
+      720,
+    )).toBe(false);
   });
 
   it('rewards sector progress and penalizes crash, reverse, and stagnation', () => {

@@ -97,6 +97,18 @@ Open the Vite URL shown in the terminal.
 | `npm test` | Run unit tests with Vitest. |
 | `npm run build` | Type-check and build the static production site. |
 | `npm run preview` | Preview the production build locally. |
+| `npm run observe:training` | Launch Chrome, start training, and log 45 seconds of Smart Coach metrics through the debug hook. |
+
+## Training Observer
+
+For tuning the learning loop, run the dev server in one terminal and the observer in another:
+
+```bash
+npm run dev
+node scripts/observe-training.mjs --seconds=60 --mode=smartCoach --speed=8
+```
+
+The observer launches the installed Chrome through `playwright-core`, clicks Start, and records phase, generation, alive cars, crash rate, best full-lap time, goal progress, record attempts, and sector coverage. It is useful for comparing Smart Coach with `--mode fullLap` on the same track.
 
 ## Project Structure
 
