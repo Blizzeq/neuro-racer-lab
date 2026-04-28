@@ -2,8 +2,8 @@ import type { Checkpoint, Point, TrackDefinition } from '../types';
 
 const TRACK_ID_PREFIX = 'track';
 export const DEFAULT_TRACK_WIDTH = 92;
-export const WORLD_WIDTH = 2800;
-export const WORLD_HEIGHT = 1800;
+export const WORLD_WIDTH = 9600;
+export const WORLD_HEIGHT = 6400;
 
 export function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -147,22 +147,23 @@ export function closedPathLength(points: Point[]): number {
 }
 
 export function createPresetTrack(): TrackDefinition {
-  return generateTrack(
-    [
-      { x: 520, y: 940 },
-      { x: 620, y: 520 },
-      { x: 1060, y: 330 },
-      { x: 1620, y: 390 },
-      { x: 2110, y: 630 },
-      { x: 2280, y: 1040 },
-      { x: 1960, y: 1390 },
-      { x: 1430, y: 1300 },
-      { x: 1220, y: 1020 },
-      { x: 900, y: 1280 },
-    ],
-    DEFAULT_TRACK_WIDTH,
-    'Neon Circuit',
-  );
+  const oldViewportCenter = { x: 1400, y: 900 };
+  const worldCenter = { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2 };
+  const offset = subtract(worldCenter, oldViewportCenter);
+  const points = [
+    { x: 520, y: 940 },
+    { x: 620, y: 520 },
+    { x: 1060, y: 330 },
+    { x: 1620, y: 390 },
+    { x: 2110, y: 630 },
+    { x: 2280, y: 1040 },
+    { x: 1960, y: 1390 },
+    { x: 1430, y: 1300 },
+    { x: 1220, y: 1020 },
+    { x: 900, y: 1280 },
+  ].map((point) => add(point, offset));
+
+  return generateTrack(points, DEFAULT_TRACK_WIDTH, 'Neon Circuit');
 }
 
 export function generateTrack(rawPoints: Point[], width = DEFAULT_TRACK_WIDTH, name = 'Custom Loop'): TrackDefinition {
@@ -212,10 +213,10 @@ function removeNearDuplicates(points: Point[], minDistance: number): Point[] {
   const result: Point[] = [];
 
   for (const point of points) {
-    const safePoint = {
-      x: clamp(point.x, 70, WORLD_WIDTH - 70),
-      y: clamp(point.y, 70, WORLD_HEIGHT - 70),
-    };
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+      continue;
+    }
+    const safePoint = point;
     const previous = result.at(-1);
     if (!previous || distance(previous, safePoint) >= minDistance) {
       result.push(safePoint);

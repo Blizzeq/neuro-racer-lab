@@ -37,6 +37,20 @@ describe('track generation', () => {
     expect(track.bounds.maxY).toBeGreaterThan(720);
   });
 
+  it('does not clamp drawn points to the simulator workspace', () => {
+    const track = generateTrack([
+      { x: -1300, y: -900 },
+      { x: 4300, y: -760 },
+      { x: 4550, y: 2800 },
+      { x: -1450, y: 3050 },
+    ]);
+
+    expect(track.bounds.minX).toBeLessThan(0);
+    expect(track.bounds.minY).toBeLessThan(0);
+    expect(track.bounds.maxX).toBeGreaterThan(2800);
+    expect(track.bounds.maxY).toBeGreaterThan(1800);
+  });
+
   it('rejects underspecified tracks', () => {
     expect(() => generateTrack([
       { x: 10, y: 10 },

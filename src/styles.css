@@ -120,8 +120,8 @@ h1 {
   position: absolute;
   top: 0;
   left: 0;
-  width: 2800px;
-  height: 1800px;
+  width: auto;
+  height: auto;
   max-width: none;
   max-height: none;
   display: block;
