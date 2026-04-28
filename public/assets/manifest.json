@@ -1,0 +1,44 @@
+{
+  "cars": [
+    "/assets/cars/car-cyan.png",
+    "/assets/cars/car-lime.png",
+    "/assets/cars/car-amber.png",
+    "/assets/cars/car-pink.png",
+    "/assets/cars/car-gold.png",
+    "/assets/cars/car-purple.png",
+    "/assets/cars/car-blue.png",
+    "/assets/cars/car-red.png"
+  ],
+  "effects": {
+    "checkpointGates": [
+      "/assets/effects/checkpoint-cyan.png",
+      "/assets/effects/checkpoint-lime.png",
+      "/assets/effects/checkpoint-amber.png",
+      "/assets/effects/checkpoint-finish.png"
+    ],
+    "sensorFans": [
+      "/assets/effects/sensor-fan-cyan.png",
+      "/assets/effects/sensor-fan-lime.png",
+      "/assets/effects/sensor-fan-amber.png",
+      "/assets/effects/sensor-fan-pink.png"
+    ],
+    "boostStreaks": [
+      "/assets/effects/boost-cyan.png",
+      "/assets/effects/boost-lime.png",
+      "/assets/effects/boost-amber.png",
+      "/assets/effects/boost-pink.png"
+    ],
+    "sparks": [
+      "/assets/effects/spark-cyan.png",
+      "/assets/effects/spark-lime.png",
+      "/assets/effects/spark-amber.png",
+      "/assets/effects/spark-pink.png"
+    ],
+    "rings": [
+      "/assets/effects/ring-cyan.png",
+      "/assets/effects/ring-lime.png",
+      "/assets/effects/ring-amber.png",
+      "/assets/effects/ring-pink.png"
+    ]
+  }
+}

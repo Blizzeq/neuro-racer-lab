@@ -57,6 +57,7 @@ type SimCar = {
   id: string;
   genome: Genome;
   body: MatterBody;
+  sprite: Phaser.GameObjects.Image;
   alive: boolean;
   removed: boolean;
   crashed: boolean;
@@ -93,11 +94,35 @@ const CAR_WIDTH = 27;
 const CAR_HEIGHT = 14;
 const WALL_THICKNESS = 12;
 const CAR_COLORS = [0x38f8d4, 0xffce45, 0xff5b7c, 0x67a6ff, 0xd6ff5a, 0xf489ff];
+const CAR_TEXTURES = [
+  'car-cyan',
+  'car-lime',
+  'car-amber',
+  'car-pink',
+  'car-gold',
+  'car-purple',
+  'car-blue',
+  'car-red',
+] as const;
+const CAR_TEXTURE_PATHS: Record<(typeof CAR_TEXTURES)[number], string> = {
+  'car-cyan': '/assets/cars/car-cyan.png',
+  'car-lime': '/assets/cars/car-lime.png',
+  'car-amber': '/assets/cars/car-amber.png',
+  'car-pink': '/assets/cars/car-pink.png',
+  'car-gold': '/assets/cars/car-gold.png',
+  'car-purple': '/assets/cars/car-purple.png',
+  'car-blue': '/assets/cars/car-blue.png',
+  'car-red': '/assets/cars/car-red.png',
+};
 const CAR_CATEGORY = 0x0001;
 const WALL_CATEGORY = 0x0002;
 const MIN_VIEWPORT_SCALE = 0.12;
 const MAX_VIEWPORT_SCALE = 2.4;
 const FIT_TRACK_MARGIN = 720;
+const CAR_SPRITE_WIDTH = 38;
+const CAR_SPRITE_HEIGHT = 22;
+const START_GATE_TEXTURE = 'checkpoint-finish';
+const SPAWN_RING_TEXTURE = 'ring-cyan';
 
 export class RacerScene extends Phaser.Scene {
   private callbacks: SceneCallbacks;
@@ -148,19 +173,28 @@ export class RacerScene extends Phaser.Scene {
   private carGraphics?: Phaser.GameObjects.Graphics;
   private sensorGraphics?: Phaser.GameObjects.Graphics;
   private drawGraphics?: Phaser.GameObjects.Graphics;
+  private decorImages: Phaser.GameObjects.Image[] = [];
 
   constructor(callbacks: SceneCallbacks) {
     super({ key: 'RacerScene' });
     this.callbacks = callbacks;
   }
 
+  preload(): void {
+    for (const key of CAR_TEXTURES) {
+      this.load.image(key, CAR_TEXTURE_PATHS[key]);
+    }
+    this.load.image(START_GATE_TEXTURE, '/assets/effects/checkpoint-finish.png');
+    this.load.image(SPAWN_RING_TEXTURE, '/assets/effects/ring-cyan.png');
+  }
+
   create(): void {
-    this.trackGraphics = this.add.graphics();
-    this.heatGraphics = this.add.graphics();
-    this.ghostGraphics = this.add.graphics();
-    this.sensorGraphics = this.add.graphics();
-    this.carGraphics = this.add.graphics();
-    this.drawGraphics = this.add.graphics();
+    this.trackGraphics = this.add.graphics().setDepth(0);
+    this.heatGraphics = this.add.graphics().setDepth(1);
+    this.ghostGraphics = this.add.graphics().setDepth(2);
+    this.carGraphics = this.add.graphics().setDepth(4);
+    this.sensorGraphics = this.add.graphics().setDepth(6);
+    this.drawGraphics = this.add.graphics().setDepth(7);
     this.matter.world.disableGravity();
     this.matter.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT, 80);
     this.matter.world.pause();
@@ -437,6 +471,7 @@ export class RacerScene extends Phaser.Scene {
     this.destroyWalls();
     this.createWalls();
     this.drawTrack();
+    this.refreshTrackDecor();
     this.fitViewportToTrack(true);
     if (notify) {
       this.callbacks.onTrackChange(track);
@@ -839,11 +874,18 @@ export class RacerScene extends Phaser.Scene {
       ...body.plugin,
       carId: genome.id,
     };
+    const sprite = this.add
+      .image(body.position.x, body.position.y, CAR_TEXTURES[index % CAR_TEXTURES.length])
+      .setOrigin(0.5)
+      .setDisplaySize(CAR_SPRITE_WIDTH, CAR_SPRITE_HEIGHT)
+      .setRotation(spawn.angle)
+      .setDepth(5);
 
     return {
       id: genome.id,
       genome,
       body,
+      sprite,
       alive: true,
       removed: false,
       crashed: false,
@@ -1160,6 +1202,9 @@ export class RacerScene extends Phaser.Scene {
   }
 
   private removeCarBody(car: SimCar): void {
+    if (car.sprite.active) {
+      car.sprite.destroy();
+    }
     if (car.removed) {
       return;
     }
@@ -1217,6 +1262,42 @@ export class RacerScene extends Phaser.Scene {
 
     graphics.fillStyle(0x38f8d4, 0.92);
     graphics.fillCircle(this.track.spawnPose.x, this.track.spawnPose.y, 5);
+  }
+
+  private refreshTrackDecor(): void {
+    for (const image of this.decorImages) {
+      image.destroy();
+    }
+    this.decorImages = [];
+
+    if (!this.textures.exists(START_GATE_TEXTURE) || !this.textures.exists(SPAWN_RING_TEXTURE)) {
+      return;
+    }
+
+    const start = this.track.checkpoints[0];
+    const gatePosition = start
+      ? {
+        x: (start.a.x + start.b.x) / 2,
+        y: (start.a.y + start.b.y) / 2,
+      }
+      : this.track.spawnPose;
+    const gateWidth = clamp(this.track.width * 1.14, 78, 138);
+    const gate = this.add
+      .image(gatePosition.x, gatePosition.y, START_GATE_TEXTURE)
+      .setOrigin(0.5)
+      .setDisplaySize(gateWidth, gateWidth * 0.5)
+      .setRotation(this.track.spawnPose.angle + Math.PI / 2)
+      .setAlpha(0.88)
+      .setDepth(3);
+    const spawnRing = this.add
+      .image(this.track.spawnPose.x, this.track.spawnPose.y, SPAWN_RING_TEXTURE)
+      .setOrigin(0.5)
+      .setDisplaySize(64, 64)
+      .setRotation(this.track.spawnPose.angle)
+      .setAlpha(0.38)
+      .setDepth(3);
+    spawnRing.setBlendMode(Phaser.BlendModes.ADD);
+    this.decorImages.push(gate, spawnRing);
   }
 
   private segmentPoints(segment: TrackSegment): Array<{ x: number; y: number }> {
@@ -1335,20 +1416,25 @@ export class RacerScene extends Phaser.Scene {
 
   private drawCar(graphics: Phaser.GameObjects.Graphics, car: SimCar, focused: boolean): void {
     const body = car.body;
-    const alpha = car.alive ? (focused ? 1 : 0.68) : 0.22;
+    if (car.sprite.active) {
+      car.sprite
+        .setPosition(body.position.x, body.position.y)
+        .setRotation(body.angle)
+        .setAlpha(car.alive ? (focused ? 1 : 0.78) : 0.18)
+        .setDepth(focused ? 5.5 : 5);
+    }
+
     const points = [
-      this.rotatePoint(body.position.x, body.position.y, -CAR_WIDTH * 0.45, -CAR_HEIGHT * 0.55, body.angle),
-      this.rotatePoint(body.position.x, body.position.y, CAR_WIDTH * 0.55, 0, body.angle),
-      this.rotatePoint(body.position.x, body.position.y, -CAR_WIDTH * 0.45, CAR_HEIGHT * 0.55, body.angle),
-      this.rotatePoint(body.position.x, body.position.y, -CAR_WIDTH * 0.2, 0, body.angle),
+      this.rotatePoint(body.position.x, body.position.y, -CAR_WIDTH * 0.64, -CAR_HEIGHT * 0.78, body.angle),
+      this.rotatePoint(body.position.x, body.position.y, CAR_WIDTH * 0.72, -CAR_HEIGHT * 0.5, body.angle),
+      this.rotatePoint(body.position.x, body.position.y, CAR_WIDTH * 0.72, CAR_HEIGHT * 0.5, body.angle),
+      this.rotatePoint(body.position.x, body.position.y, -CAR_WIDTH * 0.64, CAR_HEIGHT * 0.78, body.angle),
     ];
 
     if (focused) {
-      graphics.lineStyle(3, 0xffffff, 0.42);
+      graphics.lineStyle(3, 0xffffff, 0.36);
       graphics.strokePoints(points, true, true);
     }
-    graphics.fillStyle(car.alive ? car.color : 0x65758a, alpha);
-    graphics.fillPoints(points, true, true);
   }
 
   private drawSensors(graphics: Phaser.GameObjects.Graphics, car: SimCar): void {

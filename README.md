@@ -13,6 +13,8 @@ Interactive neuroevolution racing lab for the browser. Draw a custom track, let 
 
 ![Neuro Racer Lab simulator](docs/neuro-racer-lab-demo.png)
 
+![Generated car and effect assets](docs/neuro-racer-game-assets.png)
+
 ## What It Does
 
 Neuro Racer Lab is a public web demo where the user trains small neural-network cars to drive a drawn racing line as fast as possible.
@@ -64,6 +66,7 @@ This is an interactive neuroevolution demo, not a formal reinforcement learning 
 - Ghost replay for the best full lap and sector attempts.
 - Line heat overlay for frequently driven parts of the route.
 - Local persistence through `localStorage`.
+- Generated car sprites and reusable racing effects used by the simulator.
 - Static Vercel deployment with no backend required.
 
 ## Tech Stack
@@ -103,8 +106,19 @@ src/
   lib/              track generation, genome, fitness, curriculum, export logic
   sim/              Phaser scene, physics, rendering, pan/zoom integration
 public/            static assets
+public/assets/     generated car sprites and reusable effect assets
 docs/              README media
 ```
+
+## Visual Assets
+
+The current visual pack was generated for this project and stored as transparent game-ready assets:
+
+- `public/assets/cars/*.png` - 8 transparent top-down car sprites used by racers in Phaser.
+- `public/assets/effects/*.png` - checkpoint gates, sensor fans, boost streaks, sparks, and rings.
+- `public/assets/manifest.json` - stable paths for reusing the generated assets elsewhere.
+- `docs/neuro-racer-game-assets.png` - preview sheet for the generated asset pack.
+- `public/og-image.png` - OpenGraph preview built from the useful asset pack.
 
 ## Deployment
 
