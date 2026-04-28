@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest an improvement for training, track editing, visuals, or sharing.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What would this improve for the user?
+      placeholder: Long tracks are hard to compare because...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior you want to see.
+      placeholder: Add a sector replay comparison view...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Training algorithm
+        - Track editor
+        - Canvas and camera
+        - Visual feedback
+        - Import and export
+        - Deployment or docs
+        - Other
+  - type: textarea
+    id: context
+    attributes:
+      label: Extra context
+      description: Add sketches, references, or examples if useful.

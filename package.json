@@ -2,6 +2,28 @@
   "name": "neuro-racer-lab",
   "private": true,
   "version": "0.0.0",
+  "description": "Interactive neuroevolution racing lab for training neural cars on custom browser tracks.",
+  "license": "MIT",
+  "homepage": "https://neuro-racer-lab.vercel.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Blizzeq/neuro-racer-lab.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Blizzeq/neuro-racer-lab/issues"
+  },
+  "keywords": [
+    "machine-learning",
+    "neuroevolution",
+    "genetic-algorithm",
+    "racing-game",
+    "phaser",
+    "react",
+    "typescript",
+    "vite",
+    "vercel",
+    "simulation"
+  ],
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
