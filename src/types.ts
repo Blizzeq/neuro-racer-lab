@@ -48,7 +48,9 @@ export type TrainingPhase =
   | 'trainingSector'
   | 'hardCornerPractice'
   | 'fullLapValidation'
-  | 'recordAttempt';
+  | 'recordAttempt'
+  | 'finalExam'
+  | 'finalComplete';
 
 export type TrackSegment = {
   index: number;
@@ -93,6 +95,9 @@ export type TrainingConfig = {
   smartSegmentCount: number;
   smartStartsPerGeneration: number;
   fullLapValidationInterval: number;
+  targetLapTicks: number | null;
+  finalExamRounds: number;
+  goalPatienceGenerations: number;
   advancedTuningEnabled: boolean;
 };
 
@@ -118,8 +123,13 @@ export type TrainingStats = {
   hardestSegmentIndex: number | null;
   recordAttempts: number;
   validationLapTicks: number | null;
+  goalTargetLapTicks: number;
+  goalProgress: number;
+  finalRoundsCompleted: number;
+  finalRoundTarget: number;
+  trainingComplete: boolean;
   history: number[];
-  status: 'ready' | 'drawing' | 'running' | 'paused' | 'evolving';
+  status: 'ready' | 'drawing' | 'running' | 'paused' | 'evolving' | 'complete';
 };
 
 export type CameraState = {
@@ -169,5 +179,8 @@ export const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
   smartSegmentCount: 12,
   smartStartsPerGeneration: 5,
   fullLapValidationInterval: 5,
+  targetLapTicks: null,
+  finalExamRounds: 3,
+  goalPatienceGenerations: 18,
   advancedTuningEnabled: false,
 };

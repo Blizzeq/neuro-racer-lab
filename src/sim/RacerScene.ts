@@ -41,6 +41,7 @@ import {
 } from '../lib/curriculum';
 import { calculateFitness, cloneGenome, evaluateNetwork } from '../lib/neural';
 import { createExportSnapshot, hasSnapshot, loadSnapshot, parseExportSnapshot, saveSnapshot } from '../lib/storage';
+import { calculateLapGoalTicks, finalExamComplete, goalProgress, shouldStartFinalExam } from '../lib/trainingGoal';
 
 type MatterBody = MatterJS.BodyType;
 
@@ -134,6 +135,12 @@ export class RacerScene extends Phaser.Scene {
   private activeSegmentIndex: number | null = null;
   private recordAttempts = 0;
   private validationLapTicks: number | null = null;
+  private goalTargetLapTicks = calculateLapGoalTicks(this.trackLength, DEFAULT_TRAINING_CONFIG.maxSteps);
+  private finalExamActive = false;
+  private finalRoundsCompleted = 0;
+  private trainingComplete = false;
+  private lastBestLapGeneration: number | null = null;
+  private showcaseMode = false;
   private config: TrainingConfig = { ...DEFAULT_TRAINING_CONFIG };
   private trackGraphics?: Phaser.GameObjects.Graphics;
   private ghostGraphics?: Phaser.GameObjects.Graphics;
@@ -173,6 +180,11 @@ export class RacerScene extends Phaser.Scene {
   }
 
   update(): void {
+    if (this.trainingComplete && !this.showcaseMode) {
+      this.renderCars();
+      return;
+    }
+
     if (!this.running || this.cars.length === 0) {
       this.updateFollowCamera();
       this.renderCars();
@@ -186,7 +198,11 @@ export class RacerScene extends Phaser.Scene {
       }
     }
 
-    if (this.cars.every((car) => !car.alive) || this.generationStep >= this.config.maxSteps) {
+    if (this.cars.every((car) => !car.alive) || this.generationStep >= this.getCurrentMaxSteps()) {
+      if (this.showcaseMode) {
+        this.finishShowcaseRun();
+        return;
+      }
       this.finishGeneration();
       return;
     }
@@ -213,6 +229,7 @@ export class RacerScene extends Phaser.Scene {
     if (segmentCountChanged) {
       this.rebuildTrackSegments();
     }
+    this.goalTargetLapTicks = this.config.targetLapTicks ?? calculateLapGoalTicks(this.trackLength, this.config.maxSteps);
 
     if (populationChanged) {
       this.resetTraining();
@@ -222,6 +239,9 @@ export class RacerScene extends Phaser.Scene {
   }
 
   setRunning(running: boolean): void {
+    if (running && this.trainingComplete) {
+      return;
+    }
     this.running = running;
     if (running) {
       this.drawing = false;
@@ -233,6 +253,35 @@ export class RacerScene extends Phaser.Scene {
       this.matter.world.pause();
     }
     this.emitStats(running ? 'running' : 'paused');
+  }
+
+  runChampionDemo(): boolean {
+    const champion = this.bestGenomeEver ?? this.bestCoachGenome;
+    if (!champion) {
+      return false;
+    }
+
+    this.destroyCars();
+    this.showcaseMode = true;
+    this.trainingComplete = false;
+    this.running = true;
+    this.trainingPhase = 'finalComplete';
+    this.activeSegmentIndex = null;
+    this.generationStep = 0;
+    this.trainingStarts = [this.createFullLapStart('finalComplete', true)];
+    this.population = [{
+      ...cloneGenome(champion),
+      id: `champion-${this.generation}`,
+      generation: this.generation,
+      score: 0,
+      completedLap: false,
+      bestLapTicks: null,
+    }];
+    this.cars = [this.createCar(this.population[0], 0)];
+    this.matter.world.resume();
+    this.matter.world.engine.timing.timeScale = this.config.speedMultiplier;
+    this.emitStats('running');
+    return true;
   }
 
   setDrawing(drawing: boolean): void {
@@ -256,6 +305,11 @@ export class RacerScene extends Phaser.Scene {
     this.bestLapTicksEver = null;
     this.validationLapTicks = null;
     this.recordAttempts = 0;
+    this.finalExamActive = false;
+    this.finalRoundsCompleted = 0;
+    this.trainingComplete = false;
+    this.showcaseMode = false;
+    this.lastBestLapGeneration = null;
     this.history = [];
     this.generation = 0;
     this.resetTraining();
@@ -263,6 +317,12 @@ export class RacerScene extends Phaser.Scene {
 
   resetTraining(): void {
     this.destroyCars();
+    this.finalExamActive = false;
+    this.finalRoundsCompleted = 0;
+    this.trainingComplete = false;
+    this.showcaseMode = false;
+    this.trainingPhase = 'learningStart';
+    this.goalTargetLapTicks = this.config.targetLapTicks ?? calculateLapGoalTicks(this.trackLength, this.config.maxSteps);
     this.population = createInitialPopulation(this.config.populationSize, this.generation);
     if (this.bestGenomeEver) {
       this.population[0] = {
@@ -298,6 +358,7 @@ export class RacerScene extends Phaser.Scene {
     this.bestLapTicksEver = this.bestGenomeEver?.bestLapTicks ?? null;
     this.validationLapTicks = this.bestLapTicksEver;
     this.generation = snapshot.generation;
+    this.lastBestLapGeneration = this.bestLapTicksEver ? this.generation : null;
     if (snapshot.version === 2) {
       this.applyConfig(snapshot.config);
     }
@@ -323,6 +384,7 @@ export class RacerScene extends Phaser.Scene {
     this.bestLapTicksEver = this.bestGenomeEver?.bestLapTicks ?? null;
     this.validationLapTicks = this.bestLapTicksEver;
     this.generation = snapshot.generation;
+    this.lastBestLapGeneration = this.bestLapTicksEver ? this.generation : null;
     this.config = { ...this.config, ...snapshot.config };
     this.setTrack(snapshot.track, true);
     this.resetTraining();
@@ -370,6 +432,7 @@ export class RacerScene extends Phaser.Scene {
     this.track = track;
     this.wallSegments = trackWallSegments(track);
     this.trackLength = closedPathLength(track.centerline);
+    this.goalTargetLapTicks = this.config.targetLapTicks ?? calculateLapGoalTicks(this.trackLength, this.config.maxSteps);
     this.rebuildTrackSegments();
     this.destroyWalls();
     this.createWalls();
@@ -537,6 +600,11 @@ export class RacerScene extends Phaser.Scene {
       this.bestLapTicksEver = null;
       this.validationLapTicks = null;
       this.recordAttempts = 0;
+      this.finalExamActive = false;
+      this.finalRoundsCompleted = 0;
+      this.trainingComplete = false;
+      this.showcaseMode = false;
+      this.lastBestLapGeneration = null;
       this.history = [];
       this.generation = 0;
       this.resetTraining();
@@ -576,18 +644,22 @@ export class RacerScene extends Phaser.Scene {
   private startGeneration(): void {
     this.destroyCars();
     this.generationStep = 0;
-    this.trainingStarts = createTrainingStarts(
-      this.track,
-      this.trackSegments,
-      this.segmentScores,
-      this.config,
-      this.generation,
-      this.config.populationSize,
-    );
+    this.trainingStarts = this.finalExamActive
+      ? Array.from({ length: this.config.populationSize }, () => this.createFullLapStart('finalExam', true))
+      : createTrainingStarts(
+        this.track,
+        this.trackSegments,
+        this.segmentScores,
+        this.config,
+        this.generation,
+        this.config.populationSize,
+      );
     this.activeSegmentIndex = this.trainingStarts.find((start) => start.segmentIndex !== null)?.segmentIndex ?? null;
     const validationRun = this.trainingStarts.some((start) => start.validation);
     const sectorStart = this.trainingStarts.find((start) => start.kind === 'segment');
-    this.trainingPhase = validationRun
+    this.trainingPhase = this.finalExamActive
+      ? 'finalExam'
+      : validationRun
       ? 'fullLapValidation'
       : this.config.trainingMode !== 'smartCoach'
         ? 'recordAttempt'
@@ -603,6 +675,7 @@ export class RacerScene extends Phaser.Scene {
   }
 
   private finishGeneration(): void {
+    const wasFinalExam = this.finalExamActive;
     this.emitStats('evolving');
     for (const car of this.cars) {
       if (car.alive && car.trainingStart.kind === 'segment') {
@@ -635,6 +708,27 @@ export class RacerScene extends Phaser.Scene {
     if (generationLapBest && (!this.bestGenomeEver || compareGenomes(generationLapBest, this.bestGenomeEver) > 0)) {
       this.bestGenomeEver = cloneGenome(generationLapBest);
       this.bestLapTicksEver = generationLapBest.bestLapTicks ?? this.bestLapTicksEver;
+      this.lastBestLapGeneration = this.generation;
+    }
+
+    if (wasFinalExam) {
+      this.finalRoundsCompleted += 1;
+      if (finalExamComplete(this.finalRoundsCompleted, this.config.finalExamRounds)) {
+        this.completeTraining();
+        return;
+      }
+    } else if (shouldStartFinalExam({
+      bestLapTicks: this.bestLapTicksEver,
+      targetLapTicks: this.goalTargetLapTicks,
+      generation: this.generation,
+      lastImprovedGeneration: this.lastBestLapGeneration,
+      patienceGenerations: this.config.goalPatienceGenerations,
+      finalExamActive: this.finalExamActive,
+      trainingComplete: this.trainingComplete,
+    })) {
+      this.finalExamActive = true;
+      this.finalRoundsCompleted = 0;
+      this.trainingPhase = 'finalExam';
     }
 
     this.history = [...this.history.slice(-47), generationBest?.score ?? 0];
@@ -651,6 +745,60 @@ export class RacerScene extends Phaser.Scene {
       this.matter.world.resume();
     }
     this.emitStats(this.running ? 'running' : 'paused');
+  }
+
+  private createFullLapStart(phase: TrainingPhase, validation: boolean): TrainingStart {
+    return {
+      kind: 'fullLap',
+      phase,
+      pose: this.track.spawnPose,
+      startDistance: 0,
+      targetDistance: this.trackLength,
+      segmentIndex: null,
+      validation,
+    };
+  }
+
+  private completeTraining(): void {
+    this.trainingComplete = true;
+    this.finalExamActive = false;
+    this.showcaseMode = false;
+    this.running = false;
+    this.trainingPhase = 'finalComplete';
+    this.activeSegmentIndex = null;
+    this.matter.world.pause();
+    this.renderCars();
+    this.emitStats('complete');
+  }
+
+  private finishShowcaseRun(): void {
+    const bestLapCar = this.selectBestCar((car) => car.completedLap);
+    if (bestLapCar) {
+      this.validationLapTicks = minLapTicks(this.validationLapTicks, bestLapCar.bestLapTicks);
+      if (bestLapCar.bestLapTicks && (!this.bestLapTicksEver || bestLapCar.bestLapTicks < this.bestLapTicksEver)) {
+        this.bestLapTicksEver = bestLapCar.bestLapTicks;
+        this.bestGenomeEver = cloneGenome(bestLapCar.genome);
+      }
+    }
+    this.trainingComplete = true;
+    this.showcaseMode = false;
+    this.running = false;
+    this.trainingPhase = 'finalComplete';
+    this.matter.world.pause();
+    this.renderCars();
+    this.emitStats('complete');
+  }
+
+  private getCurrentMaxSteps(): number {
+    const hasFullLapRun = this.showcaseMode
+      || this.finalExamActive
+      || this.config.trainingMode !== 'smartCoach'
+      || this.trainingStarts.some((start) => start.kind === 'fullLap' && start.validation);
+    if (!hasFullLapRun) {
+      return this.config.maxSteps;
+    }
+
+    return Math.max(this.config.maxSteps, Math.round(this.goalTargetLapTicks * 1.45));
   }
 
   private createCar(genome: Genome, index: number): SimCar {
@@ -1274,13 +1422,14 @@ export class RacerScene extends Phaser.Scene {
       null,
     );
     const lapCompletions = scored.filter((car) => car.completedLap).length;
+    const bestLapTicks = minLapTicks(this.bestLapTicksEver, currentBestLapTicks);
 
     this.callbacks.onStats({
       generation: this.generation,
       bestScore: bestCurrent,
       bestEver: Math.max(this.bestScoreEver, bestCurrent),
       currentBestLapTicks,
-      bestLapTicks: minLapTicks(this.bestLapTicksEver, currentBestLapTicks),
+      bestLapTicks,
       lapCompletions,
       averageScore: average,
       aliveCount: alive.length,
@@ -1299,8 +1448,13 @@ export class RacerScene extends Phaser.Scene {
       hardestSegmentIndex: hardestSegmentIndex(this.segmentScores),
       recordAttempts: this.recordAttempts,
       validationLapTicks: this.validationLapTicks,
+      goalTargetLapTicks: this.goalTargetLapTicks,
+      goalProgress: goalProgress(bestLapTicks, this.goalTargetLapTicks),
+      finalRoundsCompleted: this.finalRoundsCompleted,
+      finalRoundTarget: this.config.finalExamRounds,
+      trainingComplete: this.trainingComplete,
       history: this.history,
-      status,
+      status: this.trainingComplete ? 'complete' : status,
     });
   }
 

@@ -219,6 +219,11 @@ h1 {
   box-shadow: 0 0 18px rgba(255, 206, 69, 0.8);
 }
 
+.status-dot.complete {
+  background: #d6ff5a;
+  box-shadow: 0 0 18px rgba(214, 255, 90, 0.82);
+}
+
 .track-name {
   gap: 8px;
   color: #aebbc9;
@@ -293,6 +298,30 @@ h1 {
   stroke-width: 4;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.goal-copy {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+  color: #aebbc9;
+  font-size: 13px;
+}
+
+.completion-card {
+  display: grid;
+  gap: 10px;
+  border-color: rgba(214, 255, 90, 0.34);
+  background: rgba(214, 255, 90, 0.08);
+}
+
+.completion-card strong {
+  color: #d6ff5a;
+}
+
+.completion-card span {
+  color: #d7e0eb;
+  font-size: 14px;
 }
 
 .controls {

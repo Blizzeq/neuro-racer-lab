@@ -48,6 +48,11 @@ const INITIAL_STATS: TrainingStats = {
   hardestSegmentIndex: null,
   recordAttempts: 0,
   validationLapTicks: null,
+  goalTargetLapTicks: 0,
+  goalProgress: 0,
+  finalRoundsCompleted: 0,
+  finalRoundTarget: DEFAULT_TRAINING_CONFIG.finalExamRounds,
+  trainingComplete: false,
   history: [],
   status: 'ready',
 };
@@ -61,6 +66,9 @@ const PLAN_PRESETS: Record<TrainingMode, Partial<TrainingConfig>> = {
     smartSegmentCount: 12,
     smartStartsPerGeneration: 5,
     fullLapValidationInterval: 5,
+    targetLapTicks: null,
+    finalExamRounds: 3,
+    goalPatienceGenerations: 18,
     advancedTuningEnabled: false,
   },
   fullLap: {
@@ -68,6 +76,9 @@ const PLAN_PRESETS: Record<TrainingMode, Partial<TrainingConfig>> = {
     elitismRate: 0.16,
     teacherCloneRate: 0.38,
     randomImmigrantRate: 0.14,
+    targetLapTicks: null,
+    finalExamRounds: 3,
+    goalPatienceGenerations: 18,
     advancedTuningEnabled: false,
   },
   manualLab: {
@@ -99,8 +110,15 @@ export function App() {
     sceneRef.current?.setDrawing(drawing);
   }, [drawing]);
 
+  useEffect(() => {
+    if (stats.status === 'complete') {
+      setRunning(false);
+      setNotice('Training complete');
+    }
+  }, [stats.status]);
+
   const chartPoints = useMemo(() => buildChartPoints(stats.history), [stats.history]);
-  const trainingProgress = config.trainingMode === 'smartCoach' ? stats.segmentCoverage : stats.checkpointProgress;
+  const trainingProgress = stats.goalProgress;
   const phaseText = formatTrainingPhase(stats);
   const planNote = formatPlanNote(config.trainingMode);
 
@@ -112,6 +130,10 @@ export function App() {
   }
 
   function toggleRun(): void {
+    if (!running && stats.status === 'complete') {
+      setNotice('Run champion or reset');
+      return;
+    }
     setDrawing(false);
     setRunning((value) => !value);
     setNotice(running ? 'Paused' : 'Training');
@@ -136,6 +158,17 @@ export function App() {
     sceneRef.current?.resetTraining();
     setRunning(false);
     setNotice('Generation reset');
+  }
+
+  function runChampion(): void {
+    const started = sceneRef.current?.runChampionDemo();
+    if (started) {
+      setDrawing(false);
+      setRunning(true);
+      setNotice('Champion run');
+    } else {
+      setNotice('No champion yet');
+    }
   }
 
   function saveCurrent(): void {
@@ -297,26 +330,41 @@ export function App() {
           <section className="metrics-grid" aria-label="Training metrics">
             <Metric icon={<BrainCircuit size={18} />} label="Generation" value={stats.generation.toString()} />
             <Metric icon={<Gauge size={18} />} label="Best full lap" value={formatLapTime(stats.bestLapTicks)} />
-            <Metric icon={<Zap size={18} />} label="Validation" value={formatLapTime(stats.validationLapTicks ?? stats.currentBestLapTicks)} />
+            <Metric icon={<Zap size={18} />} label="Goal time" value={formatLapTime(stats.goalTargetLapTicks)} />
             <Metric icon={<Bot size={18} />} label="Alive" value={`${stats.aliveCount}/${stats.populationSize}`} />
-            <Metric icon={<Crosshair size={18} />} label="Sector coverage" value={`${Math.round(stats.segmentCoverage * 100)}%`} />
+            <Metric icon={<Crosshair size={18} />} label="Goal progress" value={`${Math.round(stats.goalProgress * 100)}%`} />
             <Metric icon={<RefreshCcw size={18} />} label="Crash rate" value={`${Math.round(stats.crashRate * 100)}%`} />
             <Metric icon={<Route size={18} />} label="Current phase" value={phaseText} />
-            <Metric icon={<Gauge size={18} />} label="Record attempts" value={stats.recordAttempts.toString()} />
+            <Metric icon={<Gauge size={18} />} label="Final" value={`${stats.finalRoundsCompleted}/${stats.finalRoundTarget}`} />
           </section>
 
           <section className="panel-section">
             <div className="section-heading">
-              <span>Training</span>
+              <span>Goal: fastest full lap</span>
               <span>{Math.round(trainingProgress * 100)}%</span>
             </div>
             <div className="progress-track">
               <span style={{ width: `${Math.round(trainingProgress * 100)}%` }} />
             </div>
+            <div className="goal-copy">
+              <span>Beat {formatLapTime(stats.goalTargetLapTicks)} on a complete lap.</span>
+              <span>Final exam: {stats.finalRoundTarget} full-lap runs by the best drivers.</span>
+            </div>
             <svg className="fitness-chart" viewBox="0 0 220 72" role="img" aria-label="Best score history">
               <polyline points={chartPoints} />
             </svg>
           </section>
+
+          {stats.status === 'complete' ? (
+            <section className="panel-section completion-card">
+              <strong>Training complete</strong>
+              <span>Champion lap {formatLapTime(stats.bestLapTicks)} against goal {formatLapTime(stats.goalTargetLapTicks)}.</span>
+              <button className="icon-button primary" type="button" onClick={runChampion}>
+                <Play size={18} />
+                <span>Run champion</span>
+              </button>
+            </section>
+          ) : null}
 
           <section className="panel-section controls">
             <div className="control-row">
@@ -407,7 +455,8 @@ export function App() {
 
           <section className="panel-section algorithm-note">
             <strong>Coach</strong>
-            <span>{phaseText} - hardest sector {formatSector(stats.hardestSegmentIndex)}</span>
+            <span>{phaseText} - goal {Math.round(stats.goalProgress * 100)}%</span>
+            <span>Hardest sector {formatSector(stats.hardestSegmentIndex)} - coverage {Math.round(stats.segmentCoverage * 100)}%</span>
             <span>Best run = shortest completed lap; score fallback {formatScore(stats.bestScore)}</span>
             <span>8 sensor inputs - 7 hidden neurons - 2 driving outputs</span>
             <span>Elite {stats.eliteCount} - Teacher children {stats.teacherChildren} - Finishers {stats.lapCompletions}</span>
@@ -460,6 +509,10 @@ function formatTrainingPhase(stats: TrainingStats): string {
       return 'Full lap check';
     case 'recordAttempt':
       return 'Record attempt';
+    case 'finalExam':
+      return 'Final exam';
+    case 'finalComplete':
+      return 'Final complete';
   }
 }
 
