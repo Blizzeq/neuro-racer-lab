@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import Phaser from 'phaser';
-import type { TrackDefinition, TrainingStats } from '../types';
+import type { CameraState, TrackDefinition, TrainingStats } from '../types';
 import { WORLD_HEIGHT, WORLD_WIDTH } from '../lib/geometry';
 import { RacerScene } from '../sim/RacerScene';
 
@@ -9,6 +9,7 @@ type RacerStageProps = {
   onStats: (stats: TrainingStats) => void;
   onTrackChange: (track: TrackDefinition) => void;
   onStorageChange: (hasSave: boolean) => void;
+  onCameraChange: (camera: CameraState) => void;
 };
 
 export function RacerStage(props: RacerStageProps) {
@@ -26,6 +27,7 @@ export function RacerStage(props: RacerStageProps) {
       onStats: (stats) => propsRef.current.onStats(stats),
       onTrackChange: (track) => propsRef.current.onTrackChange(track),
       onStorageChange: (hasSave) => propsRef.current.onStorageChange(hasSave),
+      onCameraChange: (camera) => propsRef.current.onCameraChange(camera),
     });
 
     const game = new Phaser.Game({
@@ -36,8 +38,7 @@ export function RacerStage(props: RacerStageProps) {
       backgroundColor: '#090b10',
       scene,
       scale: {
-        mode: Phaser.Scale.FIT,
-        autoCenter: Phaser.Scale.CENTER_BOTH,
+        mode: Phaser.Scale.NONE,
       },
       physics: {
         default: 'matter',

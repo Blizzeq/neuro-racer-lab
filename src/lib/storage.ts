@@ -1,4 +1,5 @@
 import type { ExportSnapshot, Genome, SaveSnapshot, TrackDefinition, TrainingConfig } from '../types';
+import { DEFAULT_TRAINING_CONFIG } from '../types';
 
 const STORAGE_KEY = 'neuro-racer-lab:snapshot';
 
@@ -40,6 +41,9 @@ export function loadSnapshot(): SaveSnapshot | null {
     if (![1, 2].includes(parsed.version) || !parsed.track?.centerline?.length) {
       return null;
     }
+    if (parsed.version === 2) {
+      parsed.config = normalizeTrainingConfig(parsed.config);
+    }
     return parsed;
   } catch {
     return null;
@@ -56,6 +60,7 @@ export function parseExportSnapshot(raw: string): ExportSnapshot | null {
     if (parsed.version !== 2 || !parsed.track?.centerline?.length || !parsed.config) {
       return null;
     }
+    parsed.config = normalizeTrainingConfig(parsed.config);
     return parsed;
   } catch {
     return null;
@@ -64,4 +69,20 @@ export function parseExportSnapshot(raw: string): ExportSnapshot | null {
 
 export function snapshotTime(snapshot: SaveSnapshot): string {
   return snapshot.version === 2 ? snapshot.timestamp : snapshot.savedAt;
+}
+
+function normalizeTrainingConfig(config: Partial<TrainingConfig>): TrainingConfig {
+  const legacyMode = config.trainingMode as string | undefined;
+  const trainingMode = legacyMode === 'fullLap' || legacyMode === 'manualLab' || legacyMode === 'smartCoach'
+    ? legacyMode
+    : legacyMode === 'explore' || legacyMode === 'balanced' || legacyMode === 'exploit'
+      ? 'manualLab'
+      : DEFAULT_TRAINING_CONFIG.trainingMode;
+
+  return {
+    ...DEFAULT_TRAINING_CONFIG,
+    ...config,
+    trainingMode,
+    advancedTuningEnabled: trainingMode === 'manualLab' ? true : config.advancedTuningEnabled ?? false,
+  };
 }

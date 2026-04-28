@@ -41,7 +41,44 @@ export type Genome = {
   bestLapTicks?: number | null;
 };
 
-export type TrainingMode = 'explore' | 'balanced' | 'exploit';
+export type TrainingMode = 'smartCoach' | 'fullLap' | 'manualLab';
+
+export type TrainingPhase =
+  | 'learningStart'
+  | 'trainingSector'
+  | 'hardCornerPractice'
+  | 'fullLapValidation'
+  | 'recordAttempt';
+
+export type TrackSegment = {
+  index: number;
+  startIndex: number;
+  endIndex: number;
+  startDistance: number;
+  endDistance: number;
+  length: number;
+  spawnPose: Pose;
+  targetDistance: number;
+};
+
+export type TrainingStart = {
+  kind: 'fullLap' | 'segment';
+  phase: TrainingPhase;
+  pose: Pose;
+  startDistance: number;
+  targetDistance: number;
+  segmentIndex: number | null;
+  validation: boolean;
+};
+
+export type SegmentScore = {
+  segmentIndex: number;
+  attempts: number;
+  completions: number;
+  crashes: number;
+  bestScore: number;
+  bestProgress: number;
+};
 
 export type TrainingConfig = {
   populationSize: number;
@@ -53,6 +90,10 @@ export type TrainingConfig = {
   teacherCloneRate: number;
   randomImmigrantRate: number;
   trainingMode: TrainingMode;
+  smartSegmentCount: number;
+  smartStartsPerGeneration: number;
+  fullLapValidationInterval: number;
+  advancedTuningEnabled: boolean;
 };
 
 export type TrainingStats = {
@@ -71,6 +112,12 @@ export type TrainingStats = {
   bestProgress: number;
   eliteCount: number;
   teacherChildren: number;
+  trainingPhase: TrainingPhase;
+  activeSegmentIndex: number | null;
+  segmentCoverage: number;
+  hardestSegmentIndex: number | null;
+  recordAttempts: number;
+  validationLapTicks: number | null;
   history: number[];
   status: 'ready' | 'drawing' | 'running' | 'paused' | 'evolving';
 };
@@ -118,5 +165,9 @@ export const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
   elitismRate: 0.14,
   teacherCloneRate: 0.34,
   randomImmigrantRate: 0.18,
-  trainingMode: 'balanced',
+  trainingMode: 'smartCoach',
+  smartSegmentCount: 12,
+  smartStartsPerGeneration: 5,
+  fullLapValidationInterval: 5,
+  advancedTuningEnabled: false,
 };

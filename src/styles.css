@@ -47,9 +47,12 @@ button:disabled {
 
 .workspace {
   display: grid;
+  width: 100%;
   grid-template-columns: minmax(0, 1fr) 354px;
   gap: 16px;
-  min-height: calc(100vh - 36px);
+  height: calc(100vh - 36px);
+  min-height: 620px;
+  align-items: stretch;
 }
 
 .stage-panel,
@@ -62,6 +65,8 @@ button:disabled {
 .stage-panel {
   display: flex;
   min-width: 0;
+  max-width: 100%;
+  min-height: 0;
   flex-direction: column;
   border-radius: 8px;
   overflow: hidden;
@@ -103,16 +108,23 @@ h1 {
 .racer-stage {
   width: 100%;
   min-height: 0;
-  flex: 1;
-  display: flex;
-  align-items: stretch;
-  justify-content: center;
+  flex: 1 1 auto;
+  position: relative;
+  overflow: hidden;
   background: #090b10;
+  touch-action: none;
+  user-select: none;
 }
 
 .racer-stage canvas {
-  max-width: 100%;
-  max-height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2800px;
+  height: 1800px;
+  max-width: none;
+  max-height: none;
+  display: block;
   outline: none;
 }
 
@@ -145,6 +157,8 @@ h1 {
 
 .control-panel {
   display: flex;
+  min-height: 0;
+  max-height: 100%;
   flex-direction: column;
   gap: 12px;
   border-radius: 8px;
@@ -239,8 +253,9 @@ h1 {
 
 .metric-tile strong {
   color: #f8fbff;
-  font-size: 25px;
-  line-height: 1;
+  font-size: 21px;
+  line-height: 1.08;
+  overflow-wrap: anywhere;
 }
 
 .section-heading {
@@ -319,6 +334,37 @@ h1 {
   padding: 0 10px;
 }
 
+.plan-note {
+  min-height: 30px;
+  border: 1px solid rgba(56, 248, 212, 0.22);
+  border-radius: 6px;
+  padding: 7px 9px;
+  color: #c5d1df;
+  background: rgba(56, 248, 212, 0.07);
+  font-size: 13px;
+}
+
+.advanced-tuning {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid rgba(143, 163, 187, 0.16);
+  padding-top: 12px;
+}
+
+.advanced-tuning summary {
+  cursor: pointer;
+  color: #ffce45;
+  font-weight: 750;
+}
+
+.advanced-tuning[open] {
+  gap: 14px;
+}
+
+.advanced-tuning .control-row {
+  margin-top: 12px;
+}
+
 .command-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -385,7 +431,14 @@ h1 {
 
   .workspace {
     grid-template-columns: 1fr;
+    height: auto;
     min-height: auto;
+  }
+
+  .racer-stage {
+    flex: 0 0 auto;
+    height: 68vh;
+    min-height: 500px;
   }
 
   .control-panel {
@@ -401,6 +454,11 @@ h1 {
 
   h1 {
     font-size: 25px;
+  }
+
+  .racer-stage {
+    height: 62vh;
+    min-height: 380px;
   }
 
   .run-cluster {

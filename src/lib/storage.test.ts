@@ -16,4 +16,21 @@ describe('snapshot export/import', () => {
     expect(parsed?.config.trainingMode).toBe(DEFAULT_TRAINING_CONFIG.trainingMode);
     expect(parsed?.generation).toBe(7);
   });
+
+  it('normalizes legacy training modes on import', () => {
+    const snapshot = createExportSnapshot(createPresetTrack(), null, {
+      ...DEFAULT_TRAINING_CONFIG,
+      trainingMode: 'smartCoach',
+    }, 2);
+    const parsed = parseExportSnapshot(JSON.stringify({
+      ...snapshot,
+      config: {
+        ...snapshot.config,
+        trainingMode: 'balanced',
+      },
+    }));
+
+    expect(parsed?.config.trainingMode).toBe('manualLab');
+    expect(parsed?.config.smartSegmentCount).toBe(DEFAULT_TRAINING_CONFIG.smartSegmentCount);
+  });
 });

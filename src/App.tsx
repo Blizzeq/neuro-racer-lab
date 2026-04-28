@@ -42,28 +42,36 @@ const INITIAL_STATS: TrainingStats = {
   bestProgress: 0,
   eliteCount: 0,
   teacherChildren: 0,
+  trainingPhase: 'learningStart',
+  activeSegmentIndex: null,
+  segmentCoverage: 0,
+  hardestSegmentIndex: null,
+  recordAttempts: 0,
+  validationLapTicks: null,
   history: [],
   status: 'ready',
 };
 
-const MODE_PRESETS: Record<TrainingMode, Pick<TrainingConfig, 'mutationRate' | 'elitismRate' | 'teacherCloneRate' | 'randomImmigrantRate'>> = {
-  explore: {
-    mutationRate: 0.24,
-    elitismRate: 0.1,
-    teacherCloneRate: 0.25,
-    randomImmigrantRate: 0.28,
-  },
-  balanced: {
+const PLAN_PRESETS: Record<TrainingMode, Partial<TrainingConfig>> = {
+  smartCoach: {
     mutationRate: 0.16,
     elitismRate: 0.14,
     teacherCloneRate: 0.34,
     randomImmigrantRate: 0.18,
+    smartSegmentCount: 12,
+    smartStartsPerGeneration: 5,
+    fullLapValidationInterval: 5,
+    advancedTuningEnabled: false,
   },
-  exploit: {
-    mutationRate: 0.1,
-    elitismRate: 0.18,
-    teacherCloneRate: 0.48,
-    randomImmigrantRate: 0.08,
+  fullLap: {
+    mutationRate: 0.14,
+    elitismRate: 0.16,
+    teacherCloneRate: 0.38,
+    randomImmigrantRate: 0.14,
+    advancedTuningEnabled: false,
+  },
+  manualLab: {
+    advancedTuningEnabled: true,
   },
 };
 
@@ -92,6 +100,9 @@ export function App() {
   }, [drawing]);
 
   const chartPoints = useMemo(() => buildChartPoints(stats.history), [stats.history]);
+  const trainingProgress = config.trainingMode === 'smartCoach' ? stats.segmentCoverage : stats.checkpointProgress;
+  const phaseText = formatTrainingPhase(stats);
+  const planNote = formatPlanNote(config.trainingMode);
 
   function handleReady(scene: RacerScene | null): void {
     sceneRef.current = scene;
@@ -155,9 +166,9 @@ export function App() {
     setConfig((value) => ({
       ...value,
       trainingMode,
-      ...MODE_PRESETS[trainingMode],
+      ...PLAN_PRESETS[trainingMode],
     }));
-    setNotice(`${trainingMode[0].toUpperCase()}${trainingMode.slice(1)} mode`);
+    setNotice(formatPlanName(trainingMode));
   }
 
   function handleZoomIn(): void {
@@ -251,6 +262,7 @@ export function App() {
               setCamera(sceneRef.current?.getCameraState() ?? camera);
             }}
             onStorageChange={setCanLoad}
+            onCameraChange={setCamera}
           />
 
           <div className="camera-toolbar" aria-label="Camera controls">
@@ -284,20 +296,22 @@ export function App() {
 
           <section className="metrics-grid" aria-label="Training metrics">
             <Metric icon={<BrainCircuit size={18} />} label="Generation" value={stats.generation.toString()} />
-            <Metric icon={<Gauge size={18} />} label="Fastest lap" value={formatLapTime(stats.bestLapTicks)} />
-            <Metric icon={<Zap size={18} />} label="This gen" value={formatLapTime(stats.currentBestLapTicks)} />
+            <Metric icon={<Gauge size={18} />} label="Best full lap" value={formatLapTime(stats.bestLapTicks)} />
+            <Metric icon={<Zap size={18} />} label="Validation" value={formatLapTime(stats.validationLapTicks ?? stats.currentBestLapTicks)} />
             <Metric icon={<Bot size={18} />} label="Alive" value={`${stats.aliveCount}/${stats.populationSize}`} />
-            <Metric icon={<Crosshair size={18} />} label="Lap progress" value={`${Math.round(stats.bestProgress * 100)}%`} />
+            <Metric icon={<Crosshair size={18} />} label="Sector coverage" value={`${Math.round(stats.segmentCoverage * 100)}%`} />
             <Metric icon={<RefreshCcw size={18} />} label="Crash rate" value={`${Math.round(stats.crashRate * 100)}%`} />
+            <Metric icon={<Route size={18} />} label="Current phase" value={phaseText} />
+            <Metric icon={<Gauge size={18} />} label="Record attempts" value={stats.recordAttempts.toString()} />
           </section>
 
           <section className="panel-section">
             <div className="section-heading">
               <span>Training</span>
-              <span>{Math.round(stats.checkpointProgress * 100)}%</span>
+              <span>{Math.round(trainingProgress * 100)}%</span>
             </div>
             <div className="progress-track">
-              <span style={{ width: `${Math.round(stats.checkpointProgress * 100)}%` }} />
+              <span style={{ width: `${Math.round(trainingProgress * 100)}%` }} />
             </div>
             <svg className="fitness-chart" viewBox="0 0 220 72" role="img" aria-label="Best score history">
               <polyline points={chartPoints} />
@@ -306,30 +320,18 @@ export function App() {
 
           <section className="panel-section controls">
             <div className="control-row">
-              <label htmlFor="mode">Mode</label>
+              <label htmlFor="mode">Training plan</label>
               <select
                 id="mode"
                 value={config.trainingMode}
                 onChange={(event) => applyTrainingMode(event.target.value as TrainingMode)}
               >
-                <option value="explore">Explore</option>
-                <option value="balanced">Balanced</option>
-                <option value="exploit">Exploit</option>
+                <option value="smartCoach">Smart Coach</option>
+                <option value="fullLap">Full Lap Race</option>
+                <option value="manualLab">Manual Lab</option>
               </select>
             </div>
-            <div className="control-row">
-              <label htmlFor="population">Population</label>
-              <select
-                id="population"
-                value={config.populationSize}
-                onChange={(event) => setConfig((value) => ({ ...value, populationSize: Number(event.target.value) }))}
-              >
-                <option value={40}>40</option>
-                <option value={64}>64</option>
-                <option value={96}>96</option>
-                <option value={128}>128</option>
-              </select>
-            </div>
+            <div className="plan-note">{planNote}</div>
             <div className="control-row">
               <label htmlFor="speed">Speed</label>
               <input
@@ -343,19 +345,37 @@ export function App() {
               />
               <output>{config.speedMultiplier}x</output>
             </div>
-            <div className="control-row">
-              <label htmlFor="mutation">Mutation</label>
-              <input
-                id="mutation"
-                type="range"
-                min={0.05}
-                max={0.35}
-                step={0.01}
-                value={config.mutationRate}
-                onChange={(event) => setConfig((value) => ({ ...value, mutationRate: Number(event.target.value) }))}
-              />
-              <output>{Math.round(config.mutationRate * 100)}%</output>
-            </div>
+            {config.trainingMode === 'manualLab' ? (
+              <details className="advanced-tuning" open>
+                <summary>Advanced tuning</summary>
+                <div className="control-row">
+                  <label htmlFor="population">Population</label>
+                  <select
+                    id="population"
+                    value={config.populationSize}
+                    onChange={(event) => setConfig((value) => ({ ...value, populationSize: Number(event.target.value) }))}
+                  >
+                    <option value={40}>40</option>
+                    <option value={64}>64</option>
+                    <option value={96}>96</option>
+                    <option value={128}>128</option>
+                  </select>
+                </div>
+                <div className="control-row">
+                  <label htmlFor="mutation">Mutation</label>
+                  <input
+                    id="mutation"
+                    type="range"
+                    min={0.05}
+                    max={0.35}
+                    step={0.01}
+                    value={config.mutationRate}
+                    onChange={(event) => setConfig((value) => ({ ...value, mutationRate: Number(event.target.value) }))}
+                  />
+                  <output>{Math.round(config.mutationRate * 100)}%</output>
+                </div>
+              </details>
+            ) : null}
           </section>
 
           <section className="panel-section command-grid">
@@ -386,7 +406,8 @@ export function App() {
           </section>
 
           <section className="panel-section algorithm-note">
-            <strong>Genome</strong>
+            <strong>Coach</strong>
+            <span>{phaseText} - hardest sector {formatSector(stats.hardestSegmentIndex)}</span>
             <span>Best run = shortest completed lap; score fallback {formatScore(stats.bestScore)}</span>
             <span>8 sensor inputs - 7 hidden neurons - 2 driving outputs</span>
             <span>Elite {stats.eliteCount} - Teacher children {stats.teacherChildren} - Finishers {stats.lapCompletions}</span>
@@ -425,6 +446,47 @@ function formatLapTime(lapTicks: number | null): string {
     return '--';
   }
   return `${(lapTicks / 60).toFixed(2)}s`;
+}
+
+function formatTrainingPhase(stats: TrainingStats): string {
+  switch (stats.trainingPhase) {
+    case 'learningStart':
+      return 'Learning start';
+    case 'trainingSector':
+      return stats.activeSegmentIndex === null ? 'Training sector' : `Sector ${stats.activeSegmentIndex + 1}`;
+    case 'hardCornerPractice':
+      return stats.activeSegmentIndex === null ? 'Hard corner' : `Hard ${stats.activeSegmentIndex + 1}`;
+    case 'fullLapValidation':
+      return 'Full lap check';
+    case 'recordAttempt':
+      return 'Record attempt';
+  }
+}
+
+function formatPlanName(trainingMode: TrainingMode): string {
+  switch (trainingMode) {
+    case 'smartCoach':
+      return 'Smart Coach';
+    case 'fullLap':
+      return 'Full Lap Race';
+    case 'manualLab':
+      return 'Manual Lab';
+  }
+}
+
+function formatPlanNote(trainingMode: TrainingMode): string {
+  switch (trainingMode) {
+    case 'smartCoach':
+      return 'Sectors + record checks';
+    case 'fullLap':
+      return 'Start line only';
+    case 'manualLab':
+      return 'Custom evolution';
+  }
+}
+
+function formatSector(index: number | null): string {
+  return index === null ? '--' : `${index + 1}`;
 }
 
 function buildChartPoints(history: number[]): string {
