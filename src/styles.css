@@ -126,6 +126,7 @@ h1 {
   max-height: none;
   display: block;
   outline: none;
+  background: #090b10;
 }
 
 .camera-toolbar {

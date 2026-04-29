@@ -34,6 +34,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "observe:training": "node scripts/observe-training.mjs",
+    "check:canvas": "node scripts/check-canvas-load.mjs",
     "smoke:ui": "node scripts/smoke-ui.mjs"
   },
   "devDependencies": {
