@@ -7,6 +7,7 @@ const seconds = Number(args.seconds ?? args.duration ?? 45);
 const mode = args.mode ?? 'smartCoach';
 const speed = Number(args.speed ?? 8);
 const seed = String(args.seed ?? 'neuro-racer-observer');
+const track = args.track ?? 'preset';
 const chromePath = args.chrome ?? process.env.CHROME_PATH ?? findChrome();
 
 if (!chromePath) {
@@ -58,12 +59,16 @@ try {
 
   await setTrainingMode(page, mode);
   await setSpeed(page, speed);
+  if (track === 'easyLoop') {
+    await drawEasyLoop(page);
+  }
   if (!args.noStart) {
     await page.getByRole('button', { name: 'Start' }).click();
   }
 
   console.log(`Observing ${mode} for ${seconds}s at ${url}`);
   console.log(`seed: ${seed}`);
+  console.log(`track: ${track}`);
   console.log('time  gen  phase                 alive   crash  best-lap  goal  attempts');
 
   const startedAt = Date.now();
@@ -141,6 +146,31 @@ async function readDebugSnapshot(page) {
       trainingComplete: stats.trainingComplete,
     };
   });
+}
+
+async function drawEasyLoop(page) {
+  await page.getByRole('button', { name: 'Draw track' }).click();
+  const box = await page.locator('.stage-panel').boundingBox();
+  if (!box) {
+    throw new Error('Stage panel was not found.');
+  }
+
+  const centerX = box.x + box.width * 0.42;
+  const centerY = box.y + box.height * 0.56;
+  const radiusX = 260;
+  const radiusY = 165;
+  const points = Array.from({ length: 49 }, (_value, index) => {
+    const angle = (Math.PI * 2 * index) / 48;
+    return [centerX + Math.cos(angle) * radiusX, centerY + Math.sin(angle) * radiusY];
+  });
+
+  await page.mouse.move(points[0][0], points[0][1]);
+  await page.mouse.down();
+  for (const [x, y] of points.slice(1)) {
+    await page.mouse.move(x, y, { steps: 2 });
+  }
+  await page.mouse.up();
+  await page.waitForFunction(() => document.body.innerText.includes('Custom Loop'), null, { timeout: 10_000 });
 }
 
 function parseArgs(raw) {

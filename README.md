@@ -109,7 +109,7 @@ npm run dev
 node scripts/observe-training.mjs --seconds=60 --mode=smartCoach --speed=8 --seed=qa-01
 ```
 
-The observer launches the installed Chrome through `playwright-core`, clicks Start, and records phase, generation, alive cars, crash rate, best full-lap time, goal progress, record attempts, and sector coverage. Use the same `--seed` when comparing Smart Coach with `--mode fullLap` or `--mode manualLab`; run observers one at a time because parallel WebGL sessions can distort results.
+The observer launches the installed Chrome through `playwright-core`, clicks Start, and records phase, generation, alive cars, crash rate, best full-lap time, goal progress, record attempts, and sector coverage. Use the same `--seed` when comparing Smart Coach with `--mode fullLap` or `--mode manualLab`; run observers one at a time because parallel WebGL sessions can distort results. Add `--track=easyLoop` to draw a simple oval regression track before training.
 
 For UI regression checks, keep the dev server running and execute:
 

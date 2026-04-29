@@ -123,6 +123,8 @@ const CAR_TEXTURE_PATHS: Record<(typeof CAR_TEXTURES)[number], string> = {
 };
 const CAR_CATEGORY = 0x0001;
 const WALL_CATEGORY = 0x0002;
+const FIXED_PHYSICS_DELTA = 1000 / 60;
+const MAX_TRAINING_STEPS_PER_FRAME = 8;
 const MIN_VIEWPORT_SCALE = 0.12;
 const MAX_VIEWPORT_SCALE = 2.4;
 const FIT_TRACK_MARGIN = 720;
@@ -203,6 +205,8 @@ export class RacerScene extends Phaser.Scene {
     this.sensorGraphics = this.add.graphics().setDepth(6);
     this.drawGraphics = this.add.graphics().setDepth(7);
     this.matter.world.disableGravity();
+    this.matter.world.autoUpdate = false;
+    this.matter.world.engine.timing.timeScale = 1;
     this.matter.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT, 80);
     this.matter.world.pause();
     this.cameras.main.setScroll(0, 0);
@@ -232,20 +236,25 @@ export class RacerScene extends Phaser.Scene {
       return;
     }
 
-    this.generationStep += this.config.speedMultiplier;
-    for (const car of this.cars) {
-      if (car.alive) {
-        this.updateCar(car);
+    const trainingSteps = clamp(Math.round(this.config.speedMultiplier), 1, MAX_TRAINING_STEPS_PER_FRAME);
+    for (let step = 0; step < trainingSteps; step += 1) {
+      this.generationStep += 1;
+      for (const car of this.cars) {
+        if (car.alive) {
+          this.updateCar(car);
+        }
       }
-    }
 
-    if (this.cars.every((car) => !car.alive) || this.generationStep >= this.getCurrentMaxSteps()) {
-      if (this.showcaseMode) {
-        this.finishShowcaseRun();
+      this.matter.world.step(FIXED_PHYSICS_DELTA);
+
+      if (this.cars.every((car) => !car.alive) || this.generationStep >= this.getCurrentMaxSteps()) {
+        if (this.showcaseMode) {
+          this.finishShowcaseRun();
+          return;
+        }
+        this.finishGeneration();
         return;
       }
-      this.finishGeneration();
-      return;
     }
 
     this.renderCars();
@@ -265,7 +274,7 @@ export class RacerScene extends Phaser.Scene {
     if (this.config.trainingMode !== 'manualLab') {
       this.config.advancedTuningEnabled = false;
     }
-    this.matter.world.engine.timing.timeScale = this.config.speedMultiplier;
+    this.matter.world.engine.timing.timeScale = 1;
 
     if (segmentCountChanged) {
       this.rebuildTrackSegments();
@@ -289,7 +298,7 @@ export class RacerScene extends Phaser.Scene {
       this.drawPoints = [];
       this.drawGraphics?.clear();
       this.matter.world.resume();
-      this.matter.world.engine.timing.timeScale = this.config.speedMultiplier;
+      this.matter.world.engine.timing.timeScale = 1;
     } else {
       this.matter.world.pause();
     }
@@ -320,7 +329,7 @@ export class RacerScene extends Phaser.Scene {
     }];
     this.cars = [this.createCar(this.population[0], 0)];
     this.matter.world.resume();
-    this.matter.world.engine.timing.timeScale = this.config.speedMultiplier;
+    this.matter.world.engine.timing.timeScale = 1;
     this.emitStats('running');
     return true;
   }
@@ -975,7 +984,7 @@ export class RacerScene extends Phaser.Scene {
     });
 
     this.limitSpeed(body);
-    car.age += this.config.speedMultiplier;
+    car.age += 1;
     car.speedScore += speed * 0.018;
     car.fitness = this.calculateCarFitness(car, false, false);
 
