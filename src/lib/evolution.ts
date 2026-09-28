@@ -1,11 +1,5 @@
-import createGeneticAlgorithm from 'geneticalgorithm';
 import type { Genome, TrainingConfig } from '../types';
 import { cloneGenome, createRandomGenome, crossoverGenome, mutateGenome } from './neural';
-
-type GeneticAlgorithmInstance = {
-  evolve: () => GeneticAlgorithmInstance;
-  population: () => Genome[];
-};
 
 export type EvolutionResult = {
   population: Genome[];
@@ -14,8 +8,8 @@ export type EvolutionResult = {
   randomImmigrants: number;
 };
 
-export function createInitialPopulation(size: number, generation = 0): Genome[] {
-  return Array.from({ length: size }, () => createRandomGenome(generation));
+export function createInitialPopulation(size: number, generation = 0, random = Math.random): Genome[] {
+  return Array.from({ length: size }, () => createRandomGenome(generation, random));
 }
 
 export function bestGenome(population: Genome[]): Genome | null {
@@ -45,8 +39,9 @@ export function evolvePopulation(
   config: TrainingConfig,
   generation: number,
   teacherGenome: Genome | null = null,
+  random = Math.random,
 ): EvolutionResult {
-  const normalizedPopulation = normalizePopulation(population, config.populationSize, generation);
+  const normalizedPopulation = normalizePopulation(population, config.populationSize, generation, random);
   const ranked = rankGenomes(normalizedPopulation);
   const eliteCount = Math.max(2, Math.round(config.populationSize * config.elitismRate));
   const teacherChildren = Math.max(2, Math.round(config.populationSize * config.teacherCloneRate));
@@ -66,7 +61,7 @@ export function evolvePopulation(
     for (let index = 0; index < teacherChildren && next.length < config.populationSize; index += 1) {
       const mutationAmount = index % 3 === 0 ? 0.12 : index % 3 === 1 ? 0.24 : 0.44;
       next.push({
-        ...mutateGenome(teacher, config.mutationRate, mutationAmount),
+        ...mutateGenome(teacher, config.mutationRate, mutationAmount, random),
         id: `g${generation + 1}-teacher-${index}`,
         generation: generation + 1,
         score: 0,
@@ -75,13 +70,13 @@ export function evolvePopulation(
   }
 
   for (let index = 0; index < crossoverChildren && next.length < config.populationSize; index += 1) {
-    const parentA = tournamentParent(parentPool);
-    const parentB = tournamentParent(parentPool);
-    const [child] = Math.random() <= config.crossoverRate
-      ? crossoverGenome(parentA, parentB)
+    const parentA = tournamentParent(parentPool, random);
+    const parentB = tournamentParent(parentPool, random);
+    const [child] = random() <= config.crossoverRate
+      ? crossoverGenome(parentA, parentB, random)
       : [cloneGenome(parentA), cloneGenome(parentB)];
     next.push({
-      ...mutateGenome(child, config.mutationRate * 0.72, 0.28),
+      ...mutateGenome(child, config.mutationRate * 0.72, 0.28, random),
       id: `g${generation + 1}-cross-${index}`,
       generation: generation + 1,
       score: 0,
@@ -89,9 +84,9 @@ export function evolvePopulation(
   }
 
   while (next.length < config.populationSize - randomImmigrants) {
-    const parent = tournamentParent(parentPool);
+    const parent = tournamentParent(parentPool, random);
     next.push({
-      ...mutateGenome(parent, config.mutationRate * 1.4, 0.55),
+      ...mutateGenome(parent, config.mutationRate * 1.4, 0.55, random),
       id: `g${generation + 1}-fill-${next.length}`,
       generation: generation + 1,
       score: 0,
@@ -99,7 +94,7 @@ export function evolvePopulation(
   }
 
   while (next.length < config.populationSize) {
-    next.push(createRandomGenome(generation + 1));
+    next.push(createRandomGenome(generation + 1, random));
   }
 
   return {
@@ -110,57 +105,11 @@ export function evolvePopulation(
   };
 }
 
-export function evolvePopulationWithPackage(population: Genome[], config: TrainingConfig, generation: number): EvolutionResult {
-  const normalizedPopulation = normalizePopulation(population, config.populationSize, generation);
-  const elite = cloneGenome(bestGenome(normalizedPopulation) ?? normalizedPopulation[0]);
-
-  const ga = createGeneticAlgorithm({
-    population: normalizedPopulation.map(cloneGenome),
-    populationSize: config.populationSize,
-    mutationFunction: (genome: Genome) => mutateGenome(genome, config.mutationRate),
-    crossoverFunction: (a: Genome, b: Genome) => {
-      if (Math.random() > config.crossoverRate) {
-        return [cloneGenome(a), cloneGenome(b)];
-      }
-      return crossoverGenome(a, b);
-    },
-    fitnessFunction: (genome: Genome) => (Number.isFinite(genome.score) ? genome.score : 0),
-  }) as GeneticAlgorithmInstance;
-
-  ga.evolve();
-  const next = ga.population().slice(0, config.populationSize).map((genome, index) => ({
-    ...genome,
-    id: `g${generation + 1}-${index}-${Math.floor(Math.random() * 1_000_000).toString(36)}`,
-    generation: generation + 1,
-    score: 0,
-    completedLap: false,
-    bestLapTicks: null,
-    weights: [...genome.weights],
-  }));
-
-  next[0] = {
-    ...elite,
-    id: `g${generation + 1}-elite`,
-    generation: generation + 1,
-    score: 0,
-    completedLap: false,
-    bestLapTicks: null,
-    weights: [...elite.weights],
-  };
-
-  return {
-    population: next,
-    eliteCount: 1,
-    teacherChildren: 0,
-    randomImmigrants: 0,
-  };
-}
-
-function normalizePopulation(population: Genome[], size: number, generation: number): Genome[] {
+function normalizePopulation(population: Genome[], size: number, generation: number, random: () => number): Genome[] {
   const result = population.slice(0, size).map(cloneGenome);
 
   while (result.length < size) {
-    result.push(createRandomGenome(generation));
+    result.push(createRandomGenome(generation, random));
   }
 
   return result;
@@ -177,10 +126,10 @@ function resetForNextGeneration(genome: Genome, generation: number, suffix: stri
   };
 }
 
-function tournamentParent(population: Genome[]): Genome {
-  const first = population[Math.floor(Math.random() * population.length)];
-  const second = population[Math.floor(Math.random() * population.length)];
-  const third = population[Math.floor(Math.random() * population.length)];
+function tournamentParent(population: Genome[], random: () => number): Genome {
+  const first = population[Math.floor(random() * population.length)];
+  const second = population[Math.floor(random() * population.length)];
+  const third = population[Math.floor(random() * population.length)];
   return rankGenomes([first, second, third])[0];
 }
 

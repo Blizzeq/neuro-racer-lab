@@ -35,21 +35,21 @@
     "test": "vitest run",
     "observe:training": "node scripts/observe-training.mjs",
     "check:canvas": "node scripts/check-canvas-load.mjs",
-    "smoke:ui": "node scripts/smoke-ui.mjs"
+    "smoke:ui": "node scripts/smoke-ui.mjs",
+    "train:headless": "tsx scripts/train-headless.ts"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
+    "@vitejs/plugin-react": "^6.1.1",
     "jsdom": "^29.1.0",
     "playwright-core": "^1.59.1",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.2",
-    "vite": "^8.0.10",
-    "vitest": "^4.1.5"
+    "vite": "^8.3.1",
+    "vitest": "^4.1.11"
   },
   "dependencies": {
-    "@panzoom/panzoom": "^4.6.2",
-    "geneticalgorithm": "^1.0.2",
     "lucide-react": "^1.12.0",
     "phaser": "^3.90.0",
     "react": "^19.2.5",

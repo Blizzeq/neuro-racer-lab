@@ -115,11 +115,14 @@ async function setTrainingMode(page, selectedMode) {
 }
 
 async function setSpeed(page, selectedSpeed) {
+  const steps = [1, 2, 4, 8, 16, 32, 64];
+  const index = steps.reduce((best, step, stepIndex) => (Math.abs(step - selectedSpeed) < Math.abs(steps[best] - selectedSpeed) ? stepIndex : best), 0);
   await page.locator('#speed').evaluate((input, value) => {
-    input.value = String(value);
+    // React tracks controlled input values; the native setter makes the synthetic onChange fire.
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, String(value));
     input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  }, selectedSpeed);
+  }, index);
+  await page.waitForFunction((speed) => window.__NEURO_RACER_DEBUG__?.config.speedMultiplier === speed, steps[index]);
 }
 
 async function readDebugSnapshot(page) {

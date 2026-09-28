@@ -23,7 +23,7 @@ import type { CameraState, TrainingConfig, TrainingMode, TrainingStats } from '.
 import { DEFAULT_TRAINING_CONFIG } from './types';
 import { RacerStage } from './components/RacerStage';
 import type { RacerScene } from './sim/RacerScene';
-import { snapshotTime } from './lib/storage';
+import { SPEED_STEPS, nearestSpeedStep, snapshotTime } from './lib/storage';
 import './styles.css';
 
 declare global {
@@ -66,6 +66,7 @@ const INITIAL_STATS: TrainingStats = {
   finalRoundsCompleted: 0,
   finalRoundTarget: DEFAULT_TRAINING_CONFIG.finalExamRounds,
   trainingComplete: false,
+  hasChampion: false,
   history: [],
   status: 'ready',
 };
@@ -136,14 +137,15 @@ export function App() {
   }, [stats, config, running, drawing, sceneReady, notice]);
 
   useEffect(() => {
-    if (stats.status === 'complete') {
+    // The scene stops by itself when training completes or a champion run ends; keep Start/Pause in sync.
+    if (stats.status === 'complete' || stats.status === 'paused') {
       setRunning(false);
-      setNotice('Training complete');
     }
   }, [stats.status]);
 
   const chartPoints = useMemo(() => buildChartPoints(stats.history), [stats.history]);
   const trainingProgress = stats.goalProgress;
+  const speedIndex = Math.max(0, SPEED_STEPS.indexOf(nearestSpeedStep(config.speedMultiplier) as (typeof SPEED_STEPS)[number]));
   const phaseText = formatTrainingPhase(stats);
   const planNote = formatPlanNote(config.trainingMode);
 
@@ -151,10 +153,10 @@ export function App() {
     sceneRef.current = scene;
     setSceneReady(Boolean(scene));
     if (scene) {
+      scene.applyConfig(config);
       setCamera(scene.getCameraState());
-      if (running) {
-        scene.setRunning(true);
-      }
+      setRunning(false);
+      setDrawing(false);
     }
   }
 
@@ -164,7 +166,7 @@ export function App() {
       return;
     }
     if (!running && stats.status === 'complete') {
-      setNotice('Run champion or reset');
+      setNotice('Run champion or reset training');
       return;
     }
     setDrawing(false);
@@ -175,7 +177,7 @@ export function App() {
   function toggleDraw(): void {
     setRunning(false);
     setDrawing((value) => !value);
-    setNotice(drawing ? 'Track locked' : 'Draw mode');
+    setNotice(drawing ? 'Draw mode off' : 'Draw a closed loop');
   }
 
   function loadPreset(): void {
@@ -190,7 +192,7 @@ export function App() {
   function resetTraining(): void {
     sceneRef.current?.resetTraining();
     setRunning(false);
-    setNotice('Generation reset');
+    setNotice('Training reset');
   }
 
   function runChampion(): void {
@@ -209,6 +211,8 @@ export function App() {
     if (snapshot) {
       setNotice(`Saved ${new Date(snapshot.timestamp).toLocaleTimeString()}`);
       setCanLoad(true);
+    } else {
+      setNotice('Save failed: browser storage unavailable');
     }
   }
 
@@ -313,7 +317,7 @@ export function App() {
                 {running ? <Pause size={20} /> : <Play size={20} />}
                 <span>{running ? 'Pause' : 'Start'}</span>
               </button>
-              <button className="icon-button" type="button" onClick={resetTraining} title="Reset">
+              <button className="icon-button" type="button" onClick={resetTraining} title="Reset training" aria-label="Reset training">
                 <RefreshCcw size={18} />
               </button>
             </div>
@@ -324,24 +328,27 @@ export function App() {
             onStats={setStats}
             onTrackChange={(track) => {
               setTrackName(track.name);
-              setNotice('Track generated');
+              setDrawing(false);
+              setRunning(false);
+              setNotice(`${track.name} ready`);
               setCamera(sceneRef.current?.getCameraState() ?? camera);
             }}
             onStorageChange={setCanLoad}
             onCameraChange={setCamera}
+            onMessage={setNotice}
           />
 
           <div className="camera-toolbar" aria-label="Camera controls">
-            <button className="icon-button" type="button" onClick={handleZoomOut} title="Zoom out">
+            <button className="icon-button" type="button" onClick={handleZoomOut} title="Zoom out" aria-label="Zoom out">
               <ZoomOut size={18} />
             </button>
-            <button className="icon-button" type="button" onClick={handleZoomIn} title="Zoom in">
+            <button className="icon-button" type="button" onClick={handleZoomIn} title="Zoom in" aria-label="Zoom in">
               <ZoomIn size={18} />
             </button>
-            <button className="icon-button" type="button" onClick={handleFit} title="Fit track">
+            <button className="icon-button" type="button" onClick={handleFit} title="Fit track" aria-label="Fit track">
               <Maximize2 size={18} />
             </button>
-            <button className={`icon-button ${camera.followBest ? 'active' : ''}`} type="button" onClick={handleFollowBest} title="Follow best car">
+            <button className={`icon-button ${camera.followBest ? 'active' : ''}`} type="button" onClick={handleFollowBest} title="Follow best car" aria-label="Follow best car" aria-pressed={camera.followBest}>
               <Crosshair size={18} />
             </button>
             <span>{Math.round(camera.zoom * 100)}%</span>
@@ -383,9 +390,17 @@ export function App() {
               <span>Beat {formatLapTime(stats.goalTargetLapTicks)} on a complete lap.</span>
               <span>Final exam: {stats.finalRoundTarget} full-lap runs by the best drivers.</span>
             </div>
-            <svg className="fitness-chart" viewBox="0 0 220 72" role="img" aria-label="Best score history">
+            <svg className="fitness-chart" viewBox="0 0 220 72" role="img" aria-label="Lap progress, then lap pace, per generation">
+              <line className="chart-goal" x1="0" x2="220" y1="6" y2="6" />
               <polyline points={chartPoints} />
             </svg>
+            <div className="chart-caption">Lap progress per generation, then pace vs goal</div>
+            {stats.hasChampion && stats.status !== 'complete' ? (
+              <button className="icon-button champion-button" type="button" onClick={runChampion} disabled={running}>
+                <Play size={16} />
+                <span>Run champion</span>
+              </button>
+            ) : null}
           </section>
 
           {stats.status === 'complete' ? (
@@ -418,11 +433,11 @@ export function App() {
               <input
                 id="speed"
                 type="range"
-                min={1}
-                max={8}
+                min={0}
+                max={SPEED_STEPS.length - 1}
                 step={1}
-                value={config.speedMultiplier}
-                onChange={(event) => setConfig((value) => ({ ...value, speedMultiplier: Number(event.target.value) }))}
+                value={speedIndex}
+                onChange={(event) => setConfig((value) => ({ ...value, speedMultiplier: SPEED_STEPS[Number(event.target.value)] ?? 1 }))}
               />
               <output>{config.speedMultiplier}x</output>
             </div>
@@ -436,6 +451,7 @@ export function App() {
                     value={config.populationSize}
                     onChange={(event) => setConfig((value) => ({ ...value, populationSize: Number(event.target.value) }))}
                   >
+                    <option value={24}>24</option>
                     <option value={40}>40</option>
                     <option value={64}>64</option>
                     <option value={96}>96</option>
@@ -491,7 +507,7 @@ export function App() {
             <span>{phaseText} - goal {Math.round(stats.goalProgress * 100)}%</span>
             <span>Hardest sector {formatSector(stats.hardestSegmentIndex)} - coverage {Math.round(stats.segmentCoverage * 100)}%</span>
             <span>Best run = shortest completed lap; score fallback {formatScore(stats.bestScore)}</span>
-            <span>5 wall rays + turn preview - 7 hidden neurons - steer/gas/brake</span>
+            <span>5 wall rays + speed + turn preview - 7 hidden neurons - steer/throttle</span>
             <span>Elite {stats.eliteCount} - Teacher children {stats.teacherChildren} - Finishers {stats.lapCompletions}</span>
           </section>
         </aside>
@@ -577,7 +593,7 @@ function formatSector(index: number | null): string {
 
 function buildChartPoints(history: number[]): string {
   const values = history.length > 1 ? history : [0, ...history];
-  const max = Math.max(1, ...values);
+  const max = 2;
   return values
     .map((value, index) => {
       const x = values.length === 1 ? 0 : (index / (values.length - 1)) * 220;

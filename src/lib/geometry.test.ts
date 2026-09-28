@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { createPresetTrack, generateTrack, nearestDistanceToPolyline, trackWallSegments } from './geometry';
+import type { Point } from '../types';
+import {
+  TrackGenerationError,
+  buildTrackFromCenterline,
+  createPresetTrack,
+  generateTrack,
+  nearestDistanceToPolyline,
+  segmentsIntersect,
+  trackWallSegments,
+} from './geometry';
 
 describe('track generation', () => {
   it('creates boundaries and checkpoints from a centerline', () => {
@@ -41,8 +50,8 @@ describe('track generation', () => {
     const track = generateTrack([
       { x: 100, y: 100 },
       { x: 620, y: 100 },
-      { x: 620, y: 220 },
-      { x: 120, y: 220 },
+      { x: 620, y: 320 },
+      { x: 120, y: 320 },
     ], 70);
 
     expect(track.width).toBeGreaterThanOrEqual(124);
@@ -64,6 +73,50 @@ describe('track generation', () => {
     expect(track.bounds.maxY).toBeGreaterThan(1800);
   });
 
+  it('rejects loops whose lanes would overlap', () => {
+    expect(() => generateTrack([
+      { x: 100, y: 100 },
+      { x: 620, y: 100 },
+      { x: 620, y: 200 },
+      { x: 120, y: 200 },
+    ])).toThrow(TrackGenerationError);
+  });
+
+  it('rejects self-crossing and tiny routes', () => {
+    const figureEight = [
+      { x: 0, y: 0 },
+      { x: 900, y: 700 },
+      { x: 900, y: 0 },
+      { x: 0, y: 700 },
+    ];
+    expect(() => generateTrack(figureEight)).toThrow(/crosses itself/);
+    expect(() => generateTrack([
+      { x: 0, y: 0 },
+      { x: 120, y: 0 },
+      { x: 120, y: 120 },
+      { x: 0, y: 120 },
+    ])).toThrow(/too small/);
+  });
+
+  it('removes inner-boundary loops created by corners tighter than half the road width', () => {
+    const centerline: Point[] = [];
+    for (let index = 0; index < 60; index += 1) {
+      centerline.push({ x: index * 20, y: 0 });
+    }
+    for (let index = 0; index < 5; index += 1) {
+      const angle = -Math.PI / 2 + (Math.PI * (index + 1)) / 6;
+      centerline.push({ x: 1180 + Math.cos(angle) * 40, y: 40 + Math.sin(angle) * 40 });
+    }
+    for (let index = 59; index >= 0; index -= 1) {
+      centerline.push({ x: index * 20, y: 400 });
+    }
+    const track = buildTrackFromCenterline(centerline, 124, 'Hairpin');
+
+    expect(countBoundarySelfCrossings(track.leftBoundary)).toBe(0);
+    expect(countBoundarySelfCrossings(track.rightBoundary)).toBe(0);
+    expect(trackWallSegments(track)).toHaveLength(track.centerline.length * 2);
+  });
+
   it('rejects underspecified tracks', () => {
     expect(() => generateTrack([
       { x: 10, y: 10 },
@@ -72,3 +125,18 @@ describe('track generation', () => {
     ])).toThrow();
   });
 });
+
+function countBoundarySelfCrossings(boundary: Point[]): number {
+  const segments = boundary.map((point, index) => [point, boundary[(index + 1) % boundary.length]] as const);
+  const shareEndpoint = (a: readonly [Point, Point], b: readonly [Point, Point]) =>
+    a.some((p) => b.some((q) => Math.hypot(p.x - q.x, p.y - q.y) < 0.001));
+  let crossings = 0;
+  for (let i = 0; i < segments.length; i += 1) {
+    for (let j = i + 2; j < Math.min(segments.length, i + 30); j += 1) {
+      if (segmentsIntersect(segments[i][0], segments[i][1], segments[j][0], segments[j][1]) && !shareEndpoint(segments[i], segments[j])) {
+        crossings += 1;
+      }
+    }
+  }
+  return crossings;
+}
