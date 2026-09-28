@@ -28,6 +28,8 @@ export function buildTrackSegments(track: TrackDefinition, desiredCount: number)
     const startDistance = cumulative[startIndex] ?? 0;
     const endDistance = index === count - 1 ? trackLength : cumulative[endIndex] ?? trackLength;
     const length = Math.max(1, endDistance - startDistance);
+    const runUp = index === 0 ? 0 : Math.min(90, length * 0.22);
+    const spawnDistance = startDistance - runUp;
 
     return {
       index,
@@ -36,8 +38,10 @@ export function buildTrackSegments(track: TrackDefinition, desiredCount: number)
       startDistance,
       endDistance,
       length,
-      spawnPose: poseAtDistance(track.centerline, Math.max(0, startDistance - Math.min(90, length * 0.22))),
-      targetDistance: Math.max(120, length * 0.96),
+      spawnDistance,
+      spawnPose: poseAtDistance(track.centerline, spawnDistance),
+      // Progress a sector driver must cover from its spawn point, including the short run-up.
+      targetDistance: runUp + Math.max(120, length * 0.96),
     };
   });
 }
@@ -99,7 +103,7 @@ export function createTrainingStarts(
       kind: 'segment',
       phase,
       pose: segment.spawnPose,
-      startDistance: segment.startDistance,
+      startDistance: segment.spawnDistance,
       targetDistance: segment.targetDistance,
       segmentIndex: segment.index,
       validation: false,

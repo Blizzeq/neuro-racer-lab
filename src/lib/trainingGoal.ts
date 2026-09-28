@@ -1,9 +1,9 @@
-const TARGET_SPEED_PX_PER_TICK = 5.8;
+/** Slack over the centerline reference lap: a good driver must be close to the ideal line. */
+export const GOAL_REFERENCE_SLACK = 1.08;
 
-export function calculateLapGoalTicks(trackLength: number, maxSteps: number): number {
-  const rawTarget = Math.round(trackLength / TARGET_SPEED_PX_PER_TICK);
-  const minimumTarget = Math.min(360, Math.max(180, Math.round(maxSteps * 0.24)));
-  return Math.max(minimumTarget, rawTarget);
+/** Lap goal in ticks from the physics-based reference lap of the current track. */
+export function calculateLapGoalTicks(referenceLapTicks: number): number {
+  return Math.max(60, Math.round(referenceLapTicks * GOAL_REFERENCE_SLACK));
 }
 
 export function goalProgress(bestLapTicks: number | null | undefined, targetLapTicks: number): number {

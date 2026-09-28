@@ -1,10 +1,19 @@
 import type { Checkpoint, Point, TrackDefinition } from '../types';
 
 const TRACK_ID_PREFIX = 'track';
-export const DEFAULT_TRACK_WIDTH = 92;
 export const MIN_TRACK_WIDTH = 124;
-export const WORLD_WIDTH = 9600;
-export const WORLD_HEIGHT = 6400;
+export const DEFAULT_TRACK_WIDTH = MIN_TRACK_WIDTH;
+const CENTERLINE_SPACING = 20;
+const MIN_TRACK_LENGTH = 900;
+const BOUNDARY_LOOP_WINDOW = 48;
+
+/** Raised when a drawn or imported route cannot become a drivable closed track. */
+export class TrackGenerationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TrackGenerationError';
+  }
+}
 
 export function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -148,9 +157,6 @@ export function closedPathLength(points: Point[]): number {
 }
 
 export function createPresetTrack(): TrackDefinition {
-  const oldViewportCenter = { x: 1400, y: 900 };
-  const worldCenter = { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2 };
-  const offset = subtract(worldCenter, oldViewportCenter);
   const points = [
     { x: 520, y: 940 },
     { x: 620, y: 520 },
@@ -162,37 +168,58 @@ export function createPresetTrack(): TrackDefinition {
     { x: 1430, y: 1300 },
     { x: 1220, y: 1020 },
     { x: 900, y: 1280 },
-  ].map((point) => add(point, offset));
+  ];
 
   return generateTrack(points, DEFAULT_TRACK_WIDTH, 'Neon Circuit');
 }
 
+/**
+ * Turns a freehand route into a smoothed closed track.
+ * Throws TrackGenerationError when the route is too short, too small, or crosses itself.
+ */
 export function generateTrack(rawPoints: Point[], width = DEFAULT_TRACK_WIDTH, name = 'Custom Loop'): TrackDefinition {
   const cleaned = removeNearDuplicates(rawPoints, 18);
   if (cleaned.length < 4) {
-    throw new Error('A track needs at least four distinct points.');
+    throw new TrackGenerationError('A track needs at least four distinct points.');
   }
 
   const trackWidth = Math.max(width, MIN_TRACK_WIDTH);
-  const smoothed = chaikin(cleaned, 2);
-  const centerline = resampleClosedPath(smoothed, 20);
-  const halfWidth = trackWidth / 2;
+  const centerline = resampleClosedPath(chaikin(cleaned, 3), CENTERLINE_SPACING);
+  validateCenterline(centerline, trackWidth);
+  return buildTrackFromCenterline(centerline, trackWidth, name);
+}
+
+/**
+ * Builds walls, checkpoints, spawn pose, and bounds from an already smoothed centerline.
+ * Used for generated tracks and for rebuilding imported snapshots from trusted-shape data.
+ */
+export function buildTrackFromCenterline(
+  centerline: Point[],
+  width: number,
+  name: string,
+  id = `${TRACK_ID_PREFIX}-${Date.now().toString(36)}-${Math.round(Math.random() * 1000)}`,
+): TrackDefinition {
+  if (centerline.length < 4) {
+    throw new TrackGenerationError('A track needs at least four centerline points.');
+  }
+
+  const halfWidth = width / 2;
   const normals = centerline.map((_point, index) => {
     const previous = centerline[(index - 1 + centerline.length) % centerline.length];
     const next = centerline[(index + 1) % centerline.length];
     return perpendicular(normalize(subtract(next, previous)));
   });
 
-  const leftBoundary = centerline.map((point, index) => add(point, scale(normals[index], halfWidth)));
-  const rightBoundary = centerline.map((point, index) => add(point, scale(normals[index], -halfWidth)));
+  const leftBoundary = removeBoundaryLoops(centerline.map((point, index) => add(point, scale(normals[index], halfWidth))));
+  const rightBoundary = removeBoundaryLoops(centerline.map((point, index) => add(point, scale(normals[index], -halfWidth))));
   const checkpoints = createCheckpoints(centerline, leftBoundary, rightBoundary);
   const spawnDirection = normalize(subtract(centerline[1], centerline[0]));
   const allPoints = [...leftBoundary, ...rightBoundary];
 
   return {
-    id: `${TRACK_ID_PREFIX}-${Date.now().toString(36)}-${Math.round(Math.random() * 1000)}`,
+    id,
     name,
-    width: trackWidth,
+    width,
     centerline,
     leftBoundary,
     rightBoundary,
@@ -209,6 +236,94 @@ export function generateTrack(rawPoints: Point[], width = DEFAULT_TRACK_WIDTH, n
       maxY: Math.max(...allPoints.map((point) => point.y)),
     },
   };
+}
+
+function validateCenterline(centerline: Point[], trackWidth: number): void {
+  const length = closedPathLength(centerline);
+  if (length < MIN_TRACK_LENGTH) {
+    throw new TrackGenerationError('Track is too small. Draw a bigger loop.');
+  }
+
+  const segments = closedSegments(centerline);
+  for (let i = 0; i < segments.length; i += 1) {
+    for (let j = i + 2; j < segments.length; j += 1) {
+      if (i === 0 && j === segments.length - 1) {
+        continue;
+      }
+      if (segmentsIntersect(segments[i][0], segments[i][1], segments[j][0], segments[j][1])) {
+        throw new TrackGenerationError('Track crosses itself. Draw a single loop without crossings.');
+      }
+    }
+  }
+
+  // Two parts of the route that are far apart along the loop but close in space would share walls.
+  const cumulative = [0];
+  for (let index = 1; index < centerline.length; index += 1) {
+    cumulative.push(cumulative[index - 1] + distance(centerline[index - 1], centerline[index]));
+  }
+  const minSeparation = trackWidth * 0.98;
+  const minArc = trackWidth * 2.6;
+  for (let i = 0; i < centerline.length; i += 1) {
+    for (let j = i + 1; j < centerline.length; j += 1) {
+      const arc = cumulative[j] - cumulative[i];
+      if (Math.min(arc, length - arc) < minArc) {
+        continue;
+      }
+      if (distance(centerline[i], centerline[j]) < minSeparation) {
+        throw new TrackGenerationError('Parts of the track are too close together. Leave more space between lanes.');
+      }
+    }
+  }
+}
+
+/**
+ * Offsetting a curve inward by more than its turn radius creates small reversed loops.
+ * Those loops become invisible walls inside the road, so each loop is collapsed to its crossing point.
+ * The array length is preserved to keep left/right/centerline indexes aligned.
+ */
+function removeBoundaryLoops(boundary: Point[]): Point[] {
+  const count = boundary.length;
+  const result = boundary.map((point) => ({ ...point }));
+  const window = Math.min(BOUNDARY_LOOP_WINDOW, Math.floor(count / 3));
+
+  let index = 0;
+  while (index < count) {
+    const a = result[index];
+    const b = result[(index + 1) % count];
+    let collapsedTo = -1;
+
+    for (let offset = window; offset >= 2; offset -= 1) {
+      const j = index + offset;
+      const c = result[j % count];
+      const d = result[(j + 1) % count];
+      const hit = segmentIntersectionPoint(a, b, c, d);
+      if (hit) {
+        for (let k = index + 1; k <= j; k += 1) {
+          result[k % count] = { ...hit };
+        }
+        collapsedTo = j;
+        break;
+      }
+    }
+
+    index = collapsedTo > index ? collapsedTo : index + 1;
+  }
+
+  return result;
+}
+
+function segmentIntersectionPoint(a: Point, b: Point, c: Point, d: Point): Point | null {
+  const denominator = (d.y - c.y) * (b.x - a.x) - (d.x - c.x) * (b.y - a.y);
+  if (Math.abs(denominator) < 0.00001) {
+    return null;
+  }
+
+  const ua = ((d.x - c.x) * (a.y - c.y) - (d.y - c.y) * (a.x - c.x)) / denominator;
+  const ub = ((b.x - a.x) * (a.y - c.y) - (b.y - a.y) * (a.x - c.x)) / denominator;
+  if (ua <= 0.0001 || ua >= 0.9999 || ub <= 0.0001 || ub >= 0.9999) {
+    return null;
+  }
+  return { x: a.x + (b.x - a.x) * ua, y: a.y + (b.y - a.y) * ua };
 }
 
 function removeNearDuplicates(points: Point[], minDistance: number): Point[] {

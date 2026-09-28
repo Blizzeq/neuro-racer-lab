@@ -80,7 +80,7 @@ try {
   assert.equal(afterStart.running, true);
   assert.equal(afterStart.stats.populationSize, 64);
 
-  const severeLogs = consoleEvents.filter((event) => !event.includes('GL_CONTEXT_LOST_KHR'));
+  const severeLogs = consoleEvents.filter((event) => !event.includes('GL Driver Message'));
   assert.deepEqual(severeLogs, []);
 
   console.log(JSON.stringify({

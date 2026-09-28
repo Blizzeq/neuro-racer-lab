@@ -513,3 +513,20 @@ h1 {
     width: 100%;
   }
 }
+
+.fitness-chart .chart-goal {
+  stroke: rgba(214, 255, 90, 0.35);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.chart-caption {
+  margin-top: 4px;
+  color: #72849a;
+  font-size: 12px;
+}
+
+.champion-button {
+  width: 100%;
+  margin-top: 12px;
+}

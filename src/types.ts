@@ -59,7 +59,10 @@ export type TrackSegment = {
   startDistance: number;
   endDistance: number;
   length: number;
+  /** Distance along the centerline where sector drivers spawn (a short run-up before startDistance). */
+  spawnDistance: number;
   spawnPose: Pose;
+  /** Progress required from the spawn point to complete the sector. */
   targetDistance: number;
 };
 
@@ -67,7 +70,9 @@ export type TrainingStart = {
   kind: 'fullLap' | 'segment';
   phase: TrainingPhase;
   pose: Pose;
+  /** Distance along the centerline of the spawn pose. */
   startDistance: number;
+  /** Progress required from the spawn point (full lap = track length). */
   targetDistance: number;
   segmentIndex: number | null;
   validation: boolean;
@@ -128,6 +133,8 @@ export type TrainingStats = {
   finalRoundsCompleted: number;
   finalRoundTarget: number;
   trainingComplete: boolean;
+  /** True once a driver has completed a full lap and can be shown in a champion run. */
+  hasChampion: boolean;
   history: number[];
   status: 'ready' | 'drawing' | 'running' | 'paused' | 'evolving' | 'complete';
 };
@@ -171,7 +178,7 @@ export const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
   mutationRate: 0.16,
   crossoverRate: 0.72,
   maxSteps: 1500,
-  speedMultiplier: 3,
+  speedMultiplier: 4,
   elitismRate: 0.14,
   teacherCloneRate: 0.3,
   randomImmigrantRate: 0.16,

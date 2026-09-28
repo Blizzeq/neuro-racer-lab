@@ -8,13 +8,10 @@ import {
 } from './trainingGoal';
 
 describe('training goal', () => {
-  it('creates a finite lap target from track length', () => {
-    expect(calculateLapGoalTicks(4200, 1500)).toBeGreaterThan(360);
-    expect(calculateLapGoalTicks(4200, 1500)).toBeLessThanOrEqual(1650);
-  });
-
-  it('scales the lap target for very long tracks instead of capping it too low', () => {
-    expect(calculateLapGoalTicks(20_000, 1500)).toBeGreaterThan(3000);
+  it('derives the lap target from the reference lap with a small slack', () => {
+    expect(calculateLapGoalTicks(500)).toBeGreaterThan(500);
+    expect(calculateLapGoalTicks(500)).toBeLessThan(600);
+    expect(calculateLapGoalTicks(3000)).toBeGreaterThan(calculateLapGoalTicks(500));
   });
 
   it('tracks progress toward the target lap time', () => {

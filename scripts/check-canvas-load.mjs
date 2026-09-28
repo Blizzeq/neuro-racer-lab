@@ -40,19 +40,23 @@ try {
       await waitForScene(page);
       await page.waitForTimeout(250);
 
-      const health = await page.evaluate(() => {
-        const canvas = document.querySelector('.racer-stage canvas');
-        if (!(canvas instanceof HTMLCanvasElement)) {
-          return { ok: false, reason: 'canvas element missing' };
-        }
+      // The simulator renders with WebGL, so sample the composited pixels from a real screenshot.
+      const screenshot = await page.locator('.racer-stage').screenshot();
+      const health = await page.evaluate(async (base64) => {
+        const blob = await (await fetch(`data:image/png;base64,${base64}`)).blob();
+        const bitmap = await createImageBitmap(blob);
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
         const context2d = canvas.getContext('2d');
         if (!context2d) {
           return { ok: false, reason: '2d canvas context unavailable' };
         }
+        context2d.drawImage(bitmap, 0, 0);
         const positions = [
           [24, 24],
-          [120, 96],
-          [Math.max(0, canvas.width - 24), Math.max(0, canvas.height - 24)],
+          [Math.floor(bitmap.width / 2), Math.floor(bitmap.height / 2)],
+          [Math.max(0, bitmap.width - 24), Math.max(0, bitmap.height - 24)],
         ];
         const samples = positions.map(([x, y]) => {
           const [r, g, b, a] = context2d.getImageData(x, y, 1, 1).data;
@@ -61,19 +65,21 @@ try {
         const whiteSamples = samples.filter((sample) => sample.r > 240 && sample.g > 240 && sample.b > 240).length;
         const opaqueSamples = samples.filter((sample) => sample.a > 220).length;
         const averageLuma = samples.reduce((sum, sample) => sum + sample.luma, 0) / samples.length;
+        const stageCanvas = document.querySelector('.racer-stage canvas');
         return {
           ok: whiteSamples < samples.length && opaqueSamples === samples.length && averageLuma < 120,
-          width: canvas.width,
-          height: canvas.height,
+          width: stageCanvas instanceof HTMLCanvasElement ? stageCanvas.width : 0,
+          height: stageCanvas instanceof HTMLCanvasElement ? stageCanvas.height : 0,
           whiteSamples,
           opaqueSamples,
           averageLuma,
           samples,
         };
-      });
+      }, screenshot.toString('base64'));
 
       assert.equal(health.ok, true, `canvas health failed on run ${run}: ${JSON.stringify(health)}`);
       assert.deepEqual(consoleErrors, [], `console errors on run ${run}: ${consoleErrors.join('\n')}`);
+      assert.ok(health.width > 0 && health.width <= 4096, `canvas backing store should match the viewport, got ${health.width}x${health.height}`);
       results.push({
         run,
         width: health.width,

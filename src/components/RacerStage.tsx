@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import Phaser from 'phaser';
 import type { CameraState, TrackDefinition, TrainingStats } from '../types';
-import { WORLD_HEIGHT, WORLD_WIDTH } from '../lib/geometry';
 import { RacerScene } from '../sim/RacerScene';
 
 type RacerStageProps = {
@@ -10,7 +9,11 @@ type RacerStageProps = {
   onTrackChange: (track: TrackDefinition) => void;
   onStorageChange: (hasSave: boolean) => void;
   onCameraChange: (camera: CameraState) => void;
+  onMessage: (message: string) => void;
 };
+
+/** Device pixel ratio used for the canvas backing store; capped to keep fill-rate reasonable. */
+const MAX_PIXEL_RATIO = 2;
 
 export function RacerStage(props: RacerStageProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -18,85 +21,52 @@ export function RacerStage(props: RacerStageProps) {
   propsRef.current = props;
 
   useEffect(() => {
-    if (!containerRef.current) {
+    const container = containerRef.current;
+    if (!container) {
       return undefined;
     }
 
-    let game: Phaser.Game | null = null;
-    let ready = false;
-    let destroyed = false;
-    let bootTimer: number | undefined;
-    let retryCount = 0;
-    let bootToken = 0;
+    const pixelRatio = Math.min(MAX_PIXEL_RATIO, Math.max(1, window.devicePixelRatio || 1));
+    let scene: RacerScene | null = null;
+    const racerScene = new RacerScene({
+      onReady: (readyScene) => {
+        scene = readyScene;
+        propsRef.current.onReady(readyScene);
+      },
+      onStats: (stats) => propsRef.current.onStats(stats),
+      onTrackChange: (track) => propsRef.current.onTrackChange(track),
+      onStorageChange: (hasSave) => propsRef.current.onStorageChange(hasSave),
+      onCameraChange: (camera) => propsRef.current.onCameraChange(camera),
+      onMessage: (message) => propsRef.current.onMessage(message),
+    });
 
-    const bootGame = () => {
-      if (destroyed || !containerRef.current) {
-        return;
-      }
+    const game = new Phaser.Game({
+      type: Phaser.AUTO,
+      parent: container,
+      width: Math.max(1, Math.round(container.clientWidth * pixelRatio)),
+      height: Math.max(1, Math.round(container.clientHeight * pixelRatio)),
+      backgroundColor: '#090b10',
+      banner: false,
+      scene: racerScene,
+      scale: {
+        mode: Phaser.Scale.NONE,
+        zoom: 1 / pixelRatio,
+      },
+      render: {
+        antialias: true,
+        powerPreference: 'high-performance',
+      },
+    });
 
-      ready = false;
-      const currentBootToken = ++bootToken;
-      const scene = new RacerScene({
-        onReady: (readyScene) => {
-          if (destroyed || currentBootToken !== bootToken) {
-            return;
-          }
-          ready = true;
-          if (bootTimer !== undefined) {
-            window.clearTimeout(bootTimer);
-            bootTimer = undefined;
-          }
-          propsRef.current.onReady(readyScene);
-        },
-        onStats: (stats) => propsRef.current.onStats(stats),
-        onTrackChange: (track) => propsRef.current.onTrackChange(track),
-        onStorageChange: (hasSave) => propsRef.current.onStorageChange(hasSave),
-        onCameraChange: (camera) => propsRef.current.onCameraChange(camera),
-      });
-
-      game = new Phaser.Game({
-        type: Phaser.CANVAS,
-        parent: containerRef.current,
-        width: WORLD_WIDTH,
-        height: WORLD_HEIGHT,
-        backgroundColor: '#090b10',
-        scene,
-        scale: {
-          mode: Phaser.Scale.NONE,
-        },
-        render: {
-          clearBeforeRender: true,
-          transparent: false,
-        },
-        physics: {
-          default: 'matter',
-          matter: {
-            gravity: { x: 0, y: 0 },
-            debug: false,
-          },
-        },
-      });
-
-      bootTimer = window.setTimeout(() => {
-        if (ready || destroyed || retryCount >= 1) {
-          return;
-        }
-        retryCount += 1;
-        game?.destroy(true);
-        game = null;
-        propsRef.current.onReady(null);
-        window.setTimeout(bootGame, 0);
-      }, 8000);
-    };
-
-    bootGame();
+    const resizeObserver = new ResizeObserver(() => {
+      scene?.resizeViewport(container.clientWidth, container.clientHeight);
+    });
+    resizeObserver.observe(container);
 
     return () => {
-      destroyed = true;
-      if (bootTimer !== undefined) {
-        window.clearTimeout(bootTimer);
-      }
-      game?.destroy(true);
+      resizeObserver.disconnect();
+      scene = null;
+      game.destroy(true);
       propsRef.current.onReady(null);
     };
   }, []);
