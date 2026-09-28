@@ -186,7 +186,7 @@ export function stepCar(index: TrackIndex, car: SimCar): void {
     CAR_RADIUS,
   )) {
     finishCar(car, 'crashed');
-  } else if (car.start.kind === 'fullLap' && car.bestProgress >= index.length) {
+  } else if (car.start.kind === 'fullLap' && index.length > 0 && car.bestProgress >= index.length) {
     car.lapTicks = car.age;
     finishCar(car, 'lap');
   } else if (car.start.kind === 'segment' && car.bestProgress >= car.start.targetDistance) {

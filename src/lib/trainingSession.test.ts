@@ -107,6 +107,24 @@ describe('training session', () => {
     expect(session.cars).toHaveLength(DEFAULT_TRAINING_CONFIG.populationSize);
   });
 
+  it('reports a timed-out champion run and applies a population change made during it', () => {
+    const session = new TrainingSession(ovalTrack, { ...DEFAULT_TRAINING_CONFIG, populationSize: 24 }, seeded(3));
+    runGenerations(session, 8);
+    expect(session.startChampionRun()).toBe(true);
+    session.applyConfig({ populationSize: 40, maxSteps: 300, targetLapTicks: 100 });
+
+    let event = session.step();
+    for (let guard = 0; guard < 5000 && event === 'tick'; guard += 1) {
+      event = session.step();
+    }
+
+    expect(event).toBe('showcaseComplete');
+    expect(session.lastShowcase?.outcome).not.toBe('running');
+    if (!session.trainingComplete) {
+      expect(session.cars).toHaveLength(40);
+    }
+  });
+
   it('respawns the population when its size changes', () => {
     const session = new TrainingSession(ovalTrack, { ...DEFAULT_TRAINING_CONFIG, populationSize: 24 }, seeded(5));
     expect(session.applyConfig({ populationSize: 40 })).toBe(true);

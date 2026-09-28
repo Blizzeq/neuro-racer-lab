@@ -699,7 +699,13 @@ export class RacerScene extends Phaser.Scene {
     listen(element, 'pointerdown', ((event: PointerEvent) => this.handlePointerDown(event, element)) as EventListener);
     listen(element, 'pointermove', ((event: PointerEvent) => this.handlePointerMove(event)) as EventListener);
     listen(element, 'pointerup', ((event: PointerEvent) => this.handlePointerUp(event, element)) as EventListener);
-    listen(element, 'pointercancel', ((event: PointerEvent) => this.handlePointerUp(event, element)) as EventListener);
+    listen(element, 'pointercancel', ((event: PointerEvent) => {
+      // An interrupted stroke (OS gesture, palm rejection) must not replace the track.
+      if (event.pointerId === this.drawPointerId) {
+        this.cancelDrawStroke();
+      }
+      this.handlePointerUp(event, element);
+    }) as EventListener);
     this.updateCursor();
   }
 
@@ -725,7 +731,10 @@ export class RacerScene extends Phaser.Scene {
 
     const wantsPan = !this.drawing || event.button === 1 || event.button === 2;
     if (wantsPan) {
-      this.followBest = false;
+      if (this.followBest) {
+        this.followBest = false;
+        this.emitCamera(true);
+      }
       this.panPointerId = event.pointerId;
       element.style.cursor = 'grabbing';
       return;
@@ -773,12 +782,21 @@ export class RacerScene extends Phaser.Scene {
   private handlePointerUp(event: PointerEvent, element: HTMLElement): void {
     element.releasePointerCapture?.(event.pointerId);
     this.activePointers.delete(event.pointerId);
-    if (this.activePointers.size < 2) {
+    if (this.activePointers.size >= 2) {
+      this.pinchDistance = this.currentPinchDistance();
+    } else {
       this.pinchDistance = null;
+      if (this.activePointers.size === 1 && !this.drawing) {
+        // After a pinch the remaining finger keeps panning.
+        this.panPointerId = [...this.activePointers.keys()][0];
+      }
     }
     if (event.pointerId === this.panPointerId) {
       this.panPointerId = null;
       this.updateCursor();
+    }
+    if (this.activePointers.size === 0) {
+      this.panPointerId = null;
     }
     if (event.pointerId === this.drawPointerId) {
       this.drawPointerId = null;

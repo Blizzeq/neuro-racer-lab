@@ -90,9 +90,12 @@ export class TrainingSession {
 
   /** Replaces the track and restarts training from scratch. */
   setTrack(track: TrackDefinition): void {
+    // Build derived data first so a failure leaves the previous track fully intact.
+    const index = buildTrackIndex(track);
+    const referenceLapTicks = estimateReferenceLapTicks(index);
     this.track = track;
-    this.index = buildTrackIndex(track);
-    this.referenceLapTicks = estimateReferenceLapTicks(this.index);
+    this.index = index;
+    this.referenceLapTicks = referenceLapTicks;
     this.rebuildTrackSegments();
     this.resetTraining();
   }
@@ -457,6 +460,9 @@ export class TrainingSession {
 
   private finishShowcaseRun(): void {
     const car = this.cars[0];
+    if (car) {
+      finishCar(car, 'timeout');
+    }
     this.lastShowcase = car ? { outcome: car.outcome, lapTicks: car.lapTicks } : null;
     if (car?.outcome === 'lap' && car.lapTicks) {
       this.validationLapTicks = minLapTicks(this.validationLapTicks, car.lapTicks);
@@ -464,7 +470,11 @@ export class TrainingSession {
     }
     this.showcaseMode = false;
     if (this.resumeAfterShowcase) {
-      // A champion run started mid-training returns to the interrupted generation.
+      // A champion run started mid-training returns to the interrupted generation,
+      // respawning it if the population size changed during the run.
+      if (this.population.length !== this.config.populationSize) {
+        this.population = this.seededPopulation(this.champion);
+      }
       this.startGeneration();
       return;
     }

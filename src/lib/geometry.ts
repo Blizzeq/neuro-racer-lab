@@ -5,6 +5,8 @@ export const MIN_TRACK_WIDTH = 124;
 export const DEFAULT_TRACK_WIDTH = MIN_TRACK_WIDTH;
 const CENTERLINE_SPACING = 20;
 const MIN_TRACK_LENGTH = 900;
+const MAX_TRACK_LENGTH = 80_000;
+const MAX_TRACK_EXTENT = 30_000;
 const BOUNDARY_LOOP_WINDOW = 48;
 
 /** Raised when a drawn or imported route cannot become a drivable closed track. */
@@ -238,10 +240,33 @@ export function buildTrackFromCenterline(
   };
 }
 
+/**
+ * Rebuilds a track from an untrusted centerline (saved or imported): resamples it to the
+ * simulator's point spacing and applies the same validation as freshly drawn tracks.
+ */
+export function rebuildTrackFromCenterline(centerline: Point[], width: number, name: string, id?: string): TrackDefinition {
+  if (centerline.length < 4) {
+    throw new TrackGenerationError('A track needs at least four centerline points.');
+  }
+  const trackWidth = Math.max(width, MIN_TRACK_WIDTH);
+  const resampled = resampleClosedPath(centerline, CENTERLINE_SPACING);
+  validateCenterline(resampled, trackWidth);
+  return buildTrackFromCenterline(resampled, trackWidth, name, id);
+}
+
 function validateCenterline(centerline: Point[], trackWidth: number): void {
   const length = closedPathLength(centerline);
-  if (length < MIN_TRACK_LENGTH) {
+  if (!(length >= MIN_TRACK_LENGTH)) {
     throw new TrackGenerationError('Track is too small. Draw a bigger loop.');
+  }
+  const xs = centerline.map((point) => point.x);
+  const ys = centerline.map((point) => point.y);
+  if (
+    length > MAX_TRACK_LENGTH
+    || Math.max(...xs) - Math.min(...xs) > MAX_TRACK_EXTENT
+    || Math.max(...ys) - Math.min(...ys) > MAX_TRACK_EXTENT
+  ) {
+    throw new TrackGenerationError('Track is too large. Draw a smaller loop.');
   }
 
   const segments = closedSegments(centerline);

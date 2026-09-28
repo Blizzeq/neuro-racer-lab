@@ -1,6 +1,6 @@
 import type { ExportSnapshot, Genome, Point, SaveSnapshot, TrackDefinition, TrainingConfig } from '../types';
 import { DEFAULT_TRAINING_CONFIG } from '../types';
-import { MIN_TRACK_WIDTH, buildTrackFromCenterline } from './geometry';
+import { MIN_TRACK_WIDTH, rebuildTrackFromCenterline } from './geometry';
 import { GENOME_WEIGHT_COUNT } from './neural';
 
 const STORAGE_KEY = 'neuro-racer-lab:snapshot';
@@ -64,8 +64,9 @@ export function snapshotTime(snapshot: SaveSnapshot): string {
 }
 
 /**
- * Validates untrusted snapshot JSON. Derived track data (walls, checkpoints, bounds) is rebuilt
- * from the centerline so a tampered or truncated file cannot crash the simulator.
+ * Validates untrusted snapshot JSON. The track is resampled and validated like a drawn track and
+ * its derived data (walls, checkpoints, bounds) is rebuilt, so a tampered file cannot crash or
+ * freeze the simulator.
  */
 function parseSnapshot(raw: string, versions: number[]): SaveSnapshot | null {
   let parsed: unknown;
@@ -121,7 +122,7 @@ function parseTrack(value: unknown): TrackDefinition | null {
   const name = typeof value.name === 'string' && value.name.trim() ? value.name.trim().slice(0, 60) : 'Imported Track';
   const id = typeof value.id === 'string' ? value.id.slice(0, 80) : undefined;
   try {
-    return buildTrackFromCenterline(centerline.map((point: Point) => ({ x: point.x, y: point.y })), width, name, id);
+    return rebuildTrackFromCenterline(centerline.map((point: Point) => ({ x: point.x, y: point.y })), width, name, id);
   } catch {
     return null;
   }

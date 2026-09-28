@@ -60,6 +60,30 @@ describe('snapshot validation', () => {
     expect(parseExportSnapshot(JSON.stringify({ version: 3 }))).toBeNull();
   });
 
+  it('rejects degenerate, oversized, and self-crossing imported tracks without freezing', () => {
+    const snapshot = createExportSnapshot(createPresetTrack(), null, DEFAULT_TRAINING_CONFIG, 1);
+    const withCenterline = (centerline: Array<{ x: number; y: number }>) =>
+      JSON.stringify({ ...snapshot, track: { ...snapshot.track, centerline } });
+    const square = (side: number) => [
+      { x: 0, y: 0 },
+      { x: side, y: 0 },
+      { x: side, y: side },
+      { x: 0, y: side },
+    ];
+
+    const started = performance.now();
+    expect(parseExportSnapshot(withCenterline(square(999_000)))).toBeNull();
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(parseExportSnapshot(withCenterline(Array.from({ length: 4 }, () => ({ x: 5, y: 5 }))))).toBeNull();
+    expect(parseExportSnapshot(withCenterline([
+      { x: 0, y: 0 },
+      { x: 900, y: 700 },
+      { x: 900, y: 0 },
+      { x: 0, y: 700 },
+    ]))).toBeNull();
+    expect(parseExportSnapshot(withCenterline(square(1200)))?.track.centerline.length).toBeGreaterThan(100);
+  });
+
   it('clamps imported config values to supported ranges', () => {
     const config = normalizeTrainingConfig({ populationSize: 1_000_000, speedMultiplier: 3, mutationRate: -5, maxSteps: 'x' });
 

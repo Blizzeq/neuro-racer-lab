@@ -31,6 +31,8 @@ export function RacerStage(props: RacerStageProps) {
     const racerScene = new RacerScene({
       onReady: (readyScene) => {
         scene = readyScene;
+        // Resizes observed while assets were loading were dropped; apply the current size now.
+        readyScene.resizeViewport(container.clientWidth, container.clientHeight);
         propsRef.current.onReady(readyScene);
       },
       onStats: (stats) => propsRef.current.onStats(stats),
